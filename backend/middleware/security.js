@@ -1,5 +1,5 @@
 import rateLimit from 'express-rate-limit';
-import { config } from '../config.js';
+import { config, isAllowedOrigin } from '../config.js';
 
 export const apiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -21,7 +21,6 @@ export function sameOriginProtection(req, res, next) {
   const origin = req.get('origin');
   const referer = req.get('referer');
   const expectedOrigin = `${req.protocol}://${req.get('host')}`;
-  const allowed = new Set([expectedOrigin, ...config.corsOrigins]);
   let source = origin || '';
   if (!source && referer) {
     try {
@@ -30,7 +29,7 @@ export function sameOriginProtection(req, res, next) {
       source = 'invalid';
     }
   }
-  if (!source || allowed.has(source)) return next();
+  if (!source || source === expectedOrigin || isAllowedOrigin(source)) return next();
   return res.status(403).json({ message: 'Security check failed. Refresh the app and try again.' });
 }
 

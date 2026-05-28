@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { config } from './config.js';
+import { config, isAllowedOrigin } from './config.js';
 import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { dataRouter } from './routes/data.js';
@@ -26,7 +26,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use('/api', cors({
   origin(origin, callback) {
-    if (!origin || config.corsOrigins.includes(origin)) return callback(null, true);
+    if (isAllowedOrigin(origin)) return callback(null, true);
     return callback(new Error('CORS origin is not allowed.'));
   },
   credentials: true

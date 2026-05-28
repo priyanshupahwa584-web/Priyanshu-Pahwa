@@ -16,7 +16,9 @@ function device(req) {
 }
 
 function setSessionCookie(res, token, maxAge) {
-  res.setHeader('Set-Cookie', `${config.cookieName}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${config.isProduction ? '; Secure' : ''}`);
+  const sameSite = config.isProduction ? 'None' : 'Lax';
+  const secure = config.isProduction ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${config.cookieName}=${token}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${maxAge}${secure}`);
 }
 
 authRouter.post('/login', loginRateLimit, async (req, res, next) => {
@@ -40,7 +42,9 @@ authRouter.post('/login', loginRateLimit, async (req, res, next) => {
 });
 
 authRouter.post('/logout', authRequired, async (req, res) => {
-  res.setHeader('Set-Cookie', `${config.cookieName}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${config.isProduction ? '; Secure' : ''}`);
+  const sameSite = config.isProduction ? 'None' : 'Lax';
+  const secure = config.isProduction ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${config.cookieName}=; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=0${secure}`);
   await audit({ actor: req.user.username, action: 'logout', entity: 'auth', entityId: req.user.id, ip: req.ip, device: device(req) });
   res.json({ ok: true });
 });

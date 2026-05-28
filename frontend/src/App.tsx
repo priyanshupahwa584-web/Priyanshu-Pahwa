@@ -3,6 +3,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, downloadExport, downloadFromApi, postJson, putJson } from './services/api';
+import { PRINT_AGENT_URL } from './services/apiConfig';
 import { checkAgent, getAgentToken, getDefaultPrinter, getPrinters, saveAgentPrinter, sendPrintJob, setAgentToken } from './services/printAgent';
 import type { FulfilmentReport, MetroLabelRow, Notice, NoticeType, OperationRow, SectionKey, User } from './types';
 
@@ -543,7 +544,7 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
         <Panel title="Agent Status">
           <div className="grid gap-3 text-sm text-slate-700">
             <MiniStatus label="Status" value={status} />
-            <MiniStatus label="Endpoint" value="http://127.0.0.1:5055" />
+            <MiniStatus label="Endpoint" value={PRINT_AGENT_URL} />
             <MiniStatus label="Saved Printer" value={printer || 'Not selected'} />
           </div>
         </Panel>

@@ -11,7 +11,7 @@ Secure production web application for Broadreach operations data, Metro labeling
 - File storage: Google Drive API
 - Local label printing: Broadreach Windows Print Agent on each printing workstation
 - Exports: CSV, XLSX, and PDF generated from real table/JSON data
-- Deployment target: Google Cloud Run
+- Deployment target: Vercel frontend + Render backend
 
 Google credentials are used only by the backend. The frontend never receives service account JSON, private keys, or Google API credentials.
 
@@ -48,7 +48,7 @@ Columns:
 
 ## Environment
 
-Copy `.env.example` to `.env` for local development or set the same variables in Cloud Run:
+Copy `.env.example` to `.env` for local development, set frontend variables in Vercel, and set backend variables in Render:
 
 ```bash
 PORT=4000
@@ -60,7 +60,8 @@ GOOGLE_CLIENT_EMAIL=service-account@project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 GOOGLE_SHEET_ID=your-google-sheet-id
 GOOGLE_DRIVE_FOLDER_ID=your-drive-folder-id
-CORS_ORIGIN=http://127.0.0.1:4000
+CORS_ORIGIN=https://your-vercel-frontend.vercel.app
+VITE_API_URL=https://priyanshu-pahwa.onrender.com
 ```
 
 Create an admin hash locally:
@@ -80,6 +81,12 @@ npm start
 ```
 
 Open `http://127.0.0.1:4000`.
+
+For local split frontend/backend development, set `VITE_API_URL` to your local backend URL before running Vite:
+
+```bash
+VITE_API_URL=http://127.0.0.1:4000
+```
 
 ## API
 
@@ -154,7 +161,7 @@ Supported actions:
 Browsers cannot securely access all Windows printers directly. Production label printing uses the local Broadreach Print Agent:
 
 ```powershell
-cd D:\app\print-agent
+cd E:\app\print-agent
 npm start
 ```
 
@@ -186,24 +193,32 @@ npm run verify
 
 Verification checks backend syntax, frontend typecheck/build, login behavior, health endpoint, the missing Google configuration message, Metro Labeling routes, Fulfilment Report routes, export routes, and the label print test route.
 
-## Cloud Run Deployment
+## Vercel Frontend Deployment
 
-Build and push:
+Use the repository root as the Vercel project root, not the `frontend` folder by itself.
+
+Vercel settings:
+
+- Root Directory: repository root
+- Install Command: `npm install`
+- Build Command: `npm run build:frontend`
+- Output Directory: `frontend/dist`
+- Environment Variable: `VITE_API_URL=https://priyanshu-pahwa.onrender.com`
+
+The included `vercel.json` handles SPA routing so direct page refreshes work.
+
+## Render Backend Deployment
+
+Render settings:
+
+- Build Command: `npm install`
+- Start Command: `npm start`
+- Environment: Node
+- Required production env: `NODE_ENV=production`, `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, Google service account values, `GOOGLE_SHEET_ID`, `GOOGLE_DRIVE_FOLDER_ID`
+- CORS: set `CORS_ORIGIN` to your exact Vercel frontend URL. If omitted in production, the backend allows `https://*.vercel.app` as a safe Vercel fallback.
 
 ```bash
-gcloud builds submit --tag gcr.io/PROJECT_ID/broadreach-operations-platform
-```
-
-Deploy:
-
-```bash
-gcloud run deploy broadreach-operations-platform \
-  --image gcr.io/PROJECT_ID/broadreach-operations-platform \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-env-vars PORT=8080,NODE_ENV=production,GOOGLE_PROJECT_ID=PROJECT_ID,GOOGLE_CLIENT_EMAIL=SERVICE_ACCOUNT_EMAIL,GOOGLE_SHEET_ID=SHEET_ID,GOOGLE_DRIVE_FOLDER_ID=DRIVE_FOLDER_ID,CORS_ORIGIN=https://YOUR_SERVICE_URL \
-  --set-secrets JWT_SECRET=JWT_SECRET:latest,ADMIN_PASSWORD_HASH=ADMIN_PASSWORD_HASH:latest,GOOGLE_PRIVATE_KEY=GOOGLE_PRIVATE_KEY:latest
+CORS_ORIGIN=https://your-vercel-frontend.vercel.app
 ```
 
 Share the Google Sheet and Drive folder with the service account email.

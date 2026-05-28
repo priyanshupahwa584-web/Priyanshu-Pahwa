@@ -1,4 +1,6 @@
-const agentBase = 'http://127.0.0.1:5055';
+import { PRINT_AGENT_URL } from './apiConfig';
+
+const agentBase = PRINT_AGENT_URL;
 const tokenKey = 'broadreach_print_agent_token';
 const printerKey = 'broadreach_default_printer';
 

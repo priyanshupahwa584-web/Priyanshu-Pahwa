@@ -1,10 +1,12 @@
+import { apiUrl } from './apiConfig';
+
 export type ApiError = Error & { status?: number; details?: unknown };
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   try {
-    const response = await fetch(`/api${path}`, {
+    const response = await fetch(apiUrl(path), {
       ...options,
       credentials: 'include',
       headers: options.body instanceof FormData ? options.headers : { ...jsonHeaders, ...(options.headers || {}) }
@@ -34,7 +36,7 @@ export function putJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function downloadExport(format: 'csv' | 'xlsx' | 'pdf', filters: Record<string, string>) {
-  const response = await fetch('/api/exports', {
+  const response = await fetch(apiUrl('/exports'), {
     method: 'POST',
     credentials: 'include',
     headers: jsonHeaders,
@@ -57,7 +59,7 @@ export async function downloadExport(format: 'csv' | 'xlsx' | 'pdf', filters: Re
 }
 
 export async function downloadFromApi(path: string, fallbackFileName: string) {
-  const response = await fetch(`/api${path}`, { credentials: 'include' });
+  const response = await fetch(apiUrl(path), { credentials: 'include' });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(response.status >= 500 ? 'Server unavailable, please try again later.' : payload.message || 'Download failed.');

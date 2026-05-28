@@ -5,7 +5,7 @@ The web app cannot securely access all Windows printers directly from the browse
 ## Run Locally
 
 ```powershell
-cd D:\app\print-agent
+cd E:\app\print-agent
 npm start
 ```
 

@@ -29,6 +29,17 @@ function packageVersion() {
   }
 }
 
+function configuredCorsOrigins() {
+  const defaultOrigins = process.env.NODE_ENV === 'production'
+    ? 'https://*.vercel.app'
+    : 'http://127.0.0.1:4000,http://localhost:4000,http://127.0.0.1:5173,http://localhost:5173';
+  const raw = process.env.CORS_ORIGIN || defaultOrigins;
+  const origins = raw.split(',').map((origin) => origin.trim()).filter(Boolean);
+  if (process.env.FRONTEND_URL) origins.push(process.env.FRONTEND_URL.trim());
+  if (process.env.VERCEL_URL) origins.push(`https://${process.env.VERCEL_URL.replace(/^https?:\/\//, '').trim()}`);
+  return Array.from(new Set(origins));
+}
+
 const generatedSecret = crypto.randomBytes(48).toString('hex');
 
 export const config = {
@@ -51,14 +62,22 @@ export const config = {
     sheetId: required('GOOGLE_SHEET_ID'),
     driveFolderId: required('GOOGLE_DRIVE_FOLDER_ID')
   },
-  corsOrigins: (process.env.CORS_ORIGIN || 'http://127.0.0.1:4000,http://localhost:4000,http://127.0.0.1:5173,http://localhost:5173')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  corsOrigins: configuredCorsOrigins(),
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB || 25) * 1024 * 1024,
   version: packageVersion(),
   buildDate: process.env.BUILD_DATE || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto' }).format(new Date())
 };
+
+export function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return config.corsOrigins.some((allowed) => {
+    if (allowed === origin) return true;
+    if (!allowed.includes('*')) return false;
+    const pattern = allowed.split('*').map(escapeRegex).join('[^.]+');
+    return new RegExp(`^${pattern}$`).test(origin);
+  });
+}
 
 export function googleConfigured() {
   return Boolean(config.google.clientEmail && config.google.privateKey && config.google.sheetId);
