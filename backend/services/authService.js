@@ -8,6 +8,16 @@ import { id, nowIso } from '../utils/ids.js';
 const maxFailures = 5;
 const lockMs = 15 * 60 * 1000;
 const envAdminState = { failedLoginCount: 0, lockedUntil: '' };
+let cachedEnvAdminPasswordHash = '';
+
+async function envAdminPasswordHash() {
+  if (config.adminPasswordHash) return config.adminPasswordHash;
+  if (!config.adminPassword) return '';
+  if (!cachedEnvAdminPasswordHash) {
+    cachedEnvAdminPasswordHash = await bcrypt.hash(config.adminPassword, 12);
+  }
+  return cachedEnvAdminPasswordHash;
+}
 
 export function publicUser(user) {
   return {
@@ -38,12 +48,13 @@ export function verifyToken(token) {
 }
 
 export async function findUser(username) {
-  if (config.adminUsername && config.adminPasswordHash && username.toLowerCase() === config.adminUsername.toLowerCase()) {
+  const envPasswordHash = await envAdminPasswordHash();
+  if (config.adminUsername && envPasswordHash && username.toLowerCase() === config.adminUsername.toLowerCase()) {
     return {
       id: 'env_admin',
       username: config.adminUsername,
       displayName: config.adminUsername,
-      passwordHash: config.adminPasswordHash,
+      passwordHash: envPasswordHash,
       role: 'Admin',
       active: 'true',
       permissions: defaultPermissionsByRole.Admin.join(','),
@@ -52,7 +63,13 @@ export async function findUser(username) {
       source: 'env'
     };
   }
-  const users = await readRows(tabs.users);
+  let users = [];
+  try {
+    users = await readRows(tabs.users);
+  } catch (error) {
+    if (error?.statusCode === 503) return null;
+    throw error;
+  }
   return users.find((user) => String(user.username || '').toLowerCase() === username.toLowerCase()) || null;
 }
 
@@ -60,7 +77,12 @@ export async function authenticate({ username, password }) {
   const user = await findUser(username);
   if (!user || String(user.active).toLowerCase() === 'false') return { ok: false, reason: 'invalid' };
   if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) return { ok: false, reason: 'locked' };
-  const valid = await bcrypt.compare(password, user.passwordHash);
+  let valid = false;
+  try {
+    valid = Boolean(user.passwordHash) && await bcrypt.compare(password, user.passwordHash);
+  } catch (error) {
+    console.error('Password verification failed:', error);
+  }
   if (!valid) {
     const failedLoginCount = Number(user.failedLoginCount || 0) + 1;
     const lockedUntil = failedLoginCount >= maxFailures ? new Date(Date.now() + lockMs).toISOString() : '';

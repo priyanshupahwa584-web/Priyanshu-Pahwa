@@ -55,6 +55,7 @@ export const config = {
   cookieName: 'br_session',
   adminUsername: process.env.ADMIN_USERNAME || '',
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH || '',
+  adminPassword: process.env.ADMIN_PASSWORD || '',
   google: {
     projectId: required('GOOGLE_PROJECT_ID'),
     clientEmail: required('GOOGLE_CLIENT_EMAIL'),

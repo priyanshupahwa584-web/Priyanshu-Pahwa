@@ -37,7 +37,9 @@ authRouter.post('/login', loginRateLimit, async (req, res, next) => {
     await audit({ actor: result.user.username, action: 'login_success', entity: 'auth', entityId: result.user.id, ip: req.ip, device: device(req), metadata: { rememberDevice: session.remembered } });
     res.json({ user: result.user });
   } catch (error) {
-    next(error);
+    if (error?.name === 'ZodError') return next(error);
+    console.error('Login route failed:', error);
+    return res.status(500).json({ message: 'Login service error.' });
   }
 });
 

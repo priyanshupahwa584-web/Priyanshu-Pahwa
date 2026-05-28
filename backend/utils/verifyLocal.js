@@ -1,8 +1,6 @@
-import bcrypt from 'bcryptjs';
-
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'local-verify-secret-change-in-production';
 process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'verify-admin';
-process.env.ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || await bcrypt.hash('verify-pass', 10);
+process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'verify-pass';
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
 const { app } = await import('../server.js');
