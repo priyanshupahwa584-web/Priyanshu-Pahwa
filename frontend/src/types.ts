@@ -24,6 +24,34 @@ export type User = {
 export type NoticeType = 'success' | 'error' | 'info';
 export type Notice = { type: NoticeType; text: string } | null;
 
+export type FacilityAnalytics = {
+  module: string;
+  source: { sheetName: string; readOnly: boolean; range: string; latestDate: string };
+  filters: { duration: string; aggregation: string; selectedFacilities: string[] };
+  facilities: string[];
+  kpis: {
+    totalPackages: number;
+    currentTotal: number;
+    previousTotal: number;
+    delta: number;
+    activeFacilities: number;
+    bestFacility: { facility: string; total: number } | null;
+    worstFacility: { facility: string; total: number } | null;
+    peakDay: { date: string; total: number } | null;
+    rollingAverage: number;
+  };
+  dailyTotals: Array<{ date: string; total: number }>;
+  facilityTotals: Array<{ facility: string; total: number }>;
+  lineSeries: Array<Record<string, string | number>>;
+  barSeries: Array<{ period: string; facility: string; total: number }>;
+  pieSeries: Array<{ facility: string; total: number; percent: number }>;
+  heatmap: Array<{ date: string; values: Array<{ facility: string; count: number }> }>;
+  peakDays: Array<{ date: string; total: number }>;
+  summary: string[];
+  recordCount: number;
+  generatedAt: string;
+};
+
 export type OperationRow = {
   id: string;
   date: string;

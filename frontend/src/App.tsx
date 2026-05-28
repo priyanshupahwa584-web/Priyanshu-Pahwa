@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, downloadExport, downloadFromApi, postJson, putJson } from './services/api';
 import { checkAgent, getAgentToken, getDefaultPrinter, getPrinters, saveAgentPrinter, sendPrintJob, setAgentToken } from './services/printAgent';
-import type { FulfilmentReport, MetroLabelRow, Notice, NoticeType, OperationRow, SectionKey, User } from './types';
+import type { FacilityAnalytics, FulfilmentReport, MetroLabelRow, Notice, NoticeType, OperationRow, SectionKey, User } from './types';
 
 const idleTimeoutMs = 30 * 60 * 1000;
 const appVersion = 'v1.0.0';
@@ -14,39 +14,34 @@ type NavItem = { key: SectionKey; label: string; path: string; icon: IconName; s
 
 const navItems: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: 'grid' },
-  { key: 'data', label: 'Operations Data', path: '/data', icon: 'data' },
-  { key: 'metro-labeling', label: 'Metro Labeling', path: '/metro-labeling', icon: 'label' },
-  { key: 'fulfilment', label: 'Fulfilment Reports', path: '/fulfilment-reports', icon: 'report' },
-  { key: 'exports', label: 'Files & Reports', path: '/exports', icon: 'report' },
-  { key: 'imports', label: 'Files & Reports', path: '/imports', icon: 'report', sidebar: false },
+  { key: 'data', label: 'Facility Analytics', path: '/facility-analytics', icon: 'data' },
+  { key: 'activity', label: 'Executive Summary', path: '/executive-summary', icon: 'report' },
   { key: 'users', label: 'Users', path: '/users', icon: 'users' },
-  { key: 'activity', label: 'Activity Logs', path: '/activity', icon: 'activity' },
-  { key: 'printer-setup', label: 'Printer Setup', path: '/printer-setup', icon: 'printer' },
   { key: 'settings', label: 'Settings', path: '/settings', icon: 'settings' }
 ];
 
 const pageSubtitles: Partial<Record<SectionKey, string>> = {
-  dashboard: 'Live overview of operations, labeling, reports, and activity.',
-  data: 'View and manage daily operations records.',
-  'metro-labeling': 'Upload, search, preview, and print Metro labels.',
-  fulfilment: 'Generate and export completion reports.',
-  imports: 'Upload and review operational files.',
-  exports: 'Create and download report files.',
+  dashboard: 'Live overview of facility volume, trends, and exceptions.',
+  data: 'Compare facility output, share, pace, and movement.',
+  'metro-labeling': 'Metro Labeling',
+  fulfilment: 'Fulfilment Reports',
+  imports: 'File Imports',
+  exports: 'File Exports',
   users: 'Manage team access and roles.',
-  activity: 'Review system activity and print history.',
-  'printer-setup': 'Choose and test the label printer for this workstation.',
+  activity: 'Leadership view of performance, peaks, and facility movement.',
+  'printer-setup': 'Printer Setup',
   settings: 'Manage platform preferences and system setup.'
 };
 
 const sectionLabels: Partial<Record<SectionKey, string>> = {
   dashboard: 'Dashboard',
-  data: 'Operations Data',
+  data: 'Facility Analytics',
   'metro-labeling': 'Metro Labeling',
   fulfilment: 'Fulfilment Reports',
   imports: 'File Imports',
   exports: 'File Exports',
   users: 'Users',
-  activity: 'Activity Logs',
+  activity: 'Executive Summary',
   'printer-setup': 'Printer Setup',
   settings: 'Settings'
 };
@@ -84,14 +79,16 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Guard user={user} section="dashboard"><DashboardPage showNotice={showNotice} /></Guard>} />
-        <Route path="/data" element={<Guard user={user} section="data"><DataPage showNotice={showNotice} /></Guard>} />
-        <Route path="/metro-labeling" element={<Guard user={user} section="metro-labeling"><MetroLabelingPage showNotice={showNotice} /></Guard>} />
-        <Route path="/fulfilment-reports" element={<Guard user={user} section="fulfilment"><FulfilmentReportsPage showNotice={showNotice} /></Guard>} />
-        <Route path="/imports" element={<Guard user={user} section="imports"><ImportsPage showNotice={showNotice} /></Guard>} />
-        <Route path="/exports" element={<Guard user={user} section="exports"><ExportsPage showNotice={showNotice} /></Guard>} />
+        <Route path="/facility-analytics" element={<Guard user={user} section="data"><FacilityAnalyticsPage showNotice={showNotice} /></Guard>} />
+        <Route path="/executive-summary" element={<Guard user={user} section="activity"><ExecutiveSummaryPage showNotice={showNotice} /></Guard>} />
+        <Route path="/data" element={<Navigate to="/facility-analytics" replace />} />
+        <Route path="/metro-labeling" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/fulfilment-reports" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/imports" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/exports" element={<Navigate to="/dashboard" replace />} />
         <Route path="/users" element={<Guard user={user} section="users"><UsersPage showNotice={showNotice} /></Guard>} />
-        <Route path="/activity" element={<Guard user={user} section="activity"><ActivityPage /></Guard>} />
-        <Route path="/printer-setup" element={<Guard user={user} section="printer-setup"><PrinterSetupPage showNotice={showNotice} /></Guard>} />
+        <Route path="/activity" element={<Navigate to="/executive-summary" replace />} />
+        <Route path="/printer-setup" element={<Navigate to="/dashboard" replace />} />
         <Route path="/settings" element={<Guard user={user} section="settings"><SettingsPage user={user} showNotice={showNotice} /></Guard>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
@@ -192,7 +189,7 @@ function AuthFrame({ notice, children }: { notice: Notice; children: ReactNode }
               <img src="/icons/app-logo.png" alt="Broad Reach" className="mb-10 w-64 max-w-full drop-shadow-[0_0_22px_rgba(20,184,184,0.34)] sm:w-72" />
               <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-200">Secure Operations Access</p>
               <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">Broadreach Operations Platform</h1>
-              <p className="mt-4 max-w-md text-base leading-7 text-slate-200 sm:text-lg sm:leading-8">Sign in to access operations dashboards, Metro labeling, reports, and team tools.</p>
+              <p className="mt-4 max-w-md text-base leading-7 text-slate-200 sm:text-lg sm:leading-8">Sign in to access facility intelligence, executive reporting, and team tools.</p>
               <div className="mt-8 grid gap-3 text-sm text-slate-200">
                 <p className="rounded-xl border border-white/10 bg-white/5 p-4">Username and password only. No default password is shipped.</p>
                 <p className="rounded-xl border border-white/10 bg-white/5 p-4">Secure access keeps the operations workspace protected.</p>
@@ -314,65 +311,377 @@ function Guard({ user, section, children }: { user: User; section: SectionKey; c
   return canAccess(user, section) ? <>{children}</> : <Navigate to="/dashboard" replace />;
 }
 
-function DashboardPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
-  const [data, setData] = useState<any>(null);
+const durationOptions = ['Today', '7D', '30D', 'Month', 'Quarter', 'Year', 'All'];
+const aggregationOptions = ['Daily', 'Weekly', 'Monthly'];
+const chartColors = ['#17324d', '#8a6f3d', '#47706a', '#6e5d86', '#a45f45', '#5b6f91', '#7a7f5a', '#9a6b7c', '#45515f'];
+
+function useFacilityAnalytics(showNotice: (type: NoticeType, text: string) => void, defaults: { duration?: string; aggregation?: string } = {}) {
+  const [data, setData] = useState<FacilityAnalytics | null>(null);
+  const [duration, setDuration] = useState(defaults.duration || '30D');
+  const [aggregation, setAggregation] = useState(defaults.aggregation || 'Daily');
+  const [selectedFacilities, setSelectedFacilities] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [range, setRange] = useState('Day');
+  const facilitiesParam = selectedFacilities.join(',');
+
   const load = async () => {
     setBusy(true);
     try {
-      setData(await api('/dashboard'));
+      const query = new URLSearchParams({ duration, aggregation });
+      if (facilitiesParam) query.set('facilities', facilitiesParam);
+      setData(await api<FacilityAnalytics>(`/facility-intelligence?${query.toString()}`));
     } catch (error: any) {
-      showNotice('error', error.message);
+      showNotice('error', friendlyOperationsError(error.message));
     } finally {
       setBusy(false);
     }
   };
-  useEffect(() => { load(); }, []);
+
+  useEffect(() => { load(); }, [duration, aggregation, facilitiesParam]);
+
+  return { data, busy, duration, setDuration, aggregation, setAggregation, selectedFacilities, setSelectedFacilities, load };
+}
+
+function DashboardPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
+  const analytics = useFacilityAnalytics(showNotice, { duration: '30D' });
+  const { data, busy, duration, setDuration, selectedFacilities, setSelectedFacilities, load } = analytics;
+  const lineData = useChartWindow(data?.lineSeries || [], duration);
   return (
     <PageStack>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <StatusPill text={`${number(data?.rowCount)} records`} />
-        <button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh Data'}</button>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Kpi label="Total Pieces" value={number(data?.kpis?.totalPieces)} icon="data" tone="teal" />
-        <Kpi label="Throughput" value={number(data?.kpis?.throughput)} icon="activity" helper="Average pace" />
-        <Kpi label="Metro Printed" value={number(data?.kpis?.printed)} icon="label" helper="Labels completed" />
-        <Kpi label="Pending Labels" value={number(data?.kpis?.pending)} icon="report" tone="amber" />
-        <Kpi label="Label Errors" value={number(data?.kpis?.errors)} icon="activity" tone="red" />
-      </div>
-      <div className="card p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="font-black uppercase tracking-[0.08em] text-slate-950">Output Trend</h2>
-            <p className="text-sm text-slate-500">Actual, previous, and moving average.</p>
+      <PhaseHeader
+        title="Facility Operations Intelligence"
+        subtitle="Read-only package analytics from the master operations sheet."
+        meta={data?.source.latestDate ? `Latest date: ${formatShortDate(data.source.latestDate)}` : 'Live source'}
+        action={<button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh'}</button>}
+      />
+      <FacilityFilters data={data} duration={duration} setDuration={setDuration} selectedFacilities={selectedFacilities} setSelectedFacilities={setSelectedFacilities} compact />
+      {busy && !data ? <DashboardSkeleton /> : data ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <Kpi label="Total Packages" value={number(data.kpis.totalPackages)} icon="data" tone="teal" />
+            <Kpi label="Active Facilities" value={number(data.kpis.activeFacilities)} icon="grid" />
+            <Kpi label="Best Facility" value={data.kpis.bestFacility?.facility || 'N/A'} helper={data.kpis.bestFacility ? `${number(data.kpis.bestFacility.total)} packages` : undefined} icon="report" />
+            <Kpi label="Peak Day" value={data.kpis.peakDay ? formatShortDate(data.kpis.peakDay.date) : 'N/A'} helper={data.kpis.peakDay ? `${number(data.kpis.peakDay.total)} packages` : undefined} icon="activity" tone="amber" />
+            <Kpi label="Daily Movement" value={signedNumber(data.kpis.delta)} helper="Latest vs previous day" icon="data" tone={data.kpis.delta < 0 ? 'red' : 'teal'} />
           </div>
-          <Segmented value={range} options={['Day', 'Week', 'Month', 'Year']} onChange={setRange} />
-        </div>
-        <div className="mt-5 h-[390px]">
-          {data?.trend?.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.trend} margin={{ top: 18, right: 28, bottom: 12, left: 0 }}>
-                <CartesianGrid stroke="#dce4ef" vertical={false} />
-                <XAxis dataKey="date" tick={{ fill: '#334155', fontSize: 13, fontWeight: 700 }} />
-                <YAxis tick={{ fill: '#334155', fontSize: 13, fontWeight: 700 }} />
-                <Tooltip />
-                <Legend />
-                <Line name="Actual" type="monotone" dataKey="pieces" stroke="#0f62fe" strokeWidth={2.4} dot={{ r: 4 }} />
-                <Line name="Previous" type="monotone" dataKey="pieces" stroke="#64748b" strokeDasharray="6 6" strokeWidth={1.8} dot={false} />
-                <Line name="Moving Average" type="monotone" dataKey="pieces" stroke="#00a36c" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : <EmptyState text="No records yet." />}
-        </div>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <MiniStatus label="Metro Labels Uploaded" value={number(data?.kpis?.uploaded)} />
-        <MiniStatus label="Last Printed Label" value={data?.recentLabelActivity?.lastPrintedLabel?.trackingNumber || 'No prints yet'} />
-        <MiniStatus label="Fulfilment Completion" value={data?.kpis?.fulfilmentCompletion || 'No labels'} />
-      </div>
+          <div className="grid gap-5 xl:grid-cols-[1.5fr_0.9fr]">
+            <FacilityLineChart title="Package Trend" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} />
+            <FacilityPieChart data={data.pieSeries} />
+          </div>
+          <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+            <FacilityBarChart data={data.barSeries} />
+            <FacilityHeatmap data={data.heatmap} />
+          </div>
+        </>
+      ) : <EmptyState text="No facility data found." />}
     </PageStack>
+  );
+}
+
+function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
+  const analytics = useFacilityAnalytics(showNotice, { duration: 'Quarter', aggregation: 'Daily' });
+  const { data, busy, duration, setDuration, aggregation, setAggregation, selectedFacilities, setSelectedFacilities, load } = analytics;
+  const lineData = useChartWindow(data?.lineSeries || [], duration);
+  return (
+    <PageStack>
+      <PhaseHeader
+        title="Facility Analytics"
+        subtitle="Compare facility performance across time, volume, and share."
+        meta={data ? `${number(data.recordCount)} facility records` : 'Preparing analytics'}
+        action={<button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh'}</button>}
+      />
+      <FacilityFilters
+        data={data}
+        duration={duration}
+        setDuration={setDuration}
+        aggregation={aggregation}
+        setAggregation={setAggregation}
+        selectedFacilities={selectedFacilities}
+        setSelectedFacilities={setSelectedFacilities}
+      />
+      {busy && !data ? <DashboardSkeleton /> : data ? (
+        <div className="grid gap-5">
+          <FacilityLineChart title="Facility Trend Comparison" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} compareMode />
+          <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+            <FacilityBarChart data={data.barSeries} />
+            <FacilityPieChart data={data.pieSeries} />
+          </div>
+          <FacilityHeatmap data={data.heatmap} />
+          <DataTable
+            title="Facility Ranking"
+            rows={data.facilityTotals}
+            columns={['facility', 'total']}
+            emptyText="No facility totals yet."
+          />
+        </div>
+      ) : <EmptyState text="No facility data found." />}
+    </PageStack>
+  );
+}
+
+function ExecutiveSummaryPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
+  const { data, busy, duration, setDuration, load } = useFacilityAnalytics(showNotice, { duration: '30D' });
+  return (
+    <PageStack>
+      <PhaseHeader
+        title="Executive Summary"
+        subtitle="Leadership view of performance, peaks, and facility movement."
+        meta={data?.generatedAt ? `Updated ${formatShortDate(data.generatedAt)}` : 'Executive view'}
+        action={<button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh'}</button>}
+      />
+      <Segmented value={duration} options={durationOptions} onChange={setDuration} />
+      {busy && !data ? <DashboardSkeleton /> : data ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Kpi label="Total Packages" value={number(data.kpis.totalPackages)} icon="data" tone="teal" />
+            <Kpi label="Rolling Average" value={number(data.kpis.rollingAverage)} icon="activity" />
+            <Kpi label="Best Facility" value={data.kpis.bestFacility?.facility || 'N/A'} icon="report" />
+            <Kpi label="Lowest Volume" value={data.kpis.worstFacility?.facility || 'N/A'} icon="grid" tone="amber" />
+          </div>
+          <div className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
+            <Panel title="Executive Notes">
+              <div className="grid gap-3">
+                {data.summary.map((item) => <div key={item} className="rounded-xl bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-700">{item}</div>)}
+              </div>
+            </Panel>
+            <FacilityBarChart data={data.barSeries} />
+          </div>
+          <DataTable title="Peak Days" rows={data.peakDays} columns={['date', 'total']} emptyText="No peak days yet." />
+        </>
+      ) : <EmptyState text="No executive summary available." />}
+    </PageStack>
+  );
+}
+
+function useChartWindow(points: Array<Record<string, string | number>>, duration: string) {
+  const [windowSize, setWindowSize] = useState(0);
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    setWindowSize(0);
+    setOffset(0);
+  }, [duration, points.length]);
+  const visibleSize = windowSize || points.length;
+  const maxOffset = Math.max(0, points.length - visibleSize);
+  const safeOffset = Math.min(offset, maxOffset);
+  const visible = points.slice(safeOffset, safeOffset + visibleSize);
+  return {
+    points: visible,
+    total: points.length,
+    zoomIn: () => setWindowSize((size) => Math.max(4, Math.floor((size || points.length) * 0.7))),
+    zoomOut: () => setWindowSize((size) => Math.min(points.length, Math.ceil((size || points.length) * 1.35))),
+    panLeft: () => setOffset((value) => Math.max(0, value - Math.max(1, Math.floor(visibleSize / 3)))),
+    panRight: () => setOffset((value) => Math.min(maxOffset, value + Math.max(1, Math.floor(visibleSize / 3)))),
+    reset: () => { setWindowSize(0); setOffset(0); },
+    isWindowed: visibleSize < points.length || safeOffset > 0
+  };
+}
+
+function PhaseHeader({ title, subtitle, meta, action }: { title: string; subtitle: string; meta?: string; action?: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-enterprise">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.2em] text-broad-teal">Facility Operations Intelligence</div>
+          <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950 md:text-3xl">{title}</h2>
+          <p className="mt-1 max-w-3xl text-sm font-medium text-slate-500">{subtitle}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {meta && <StatusPill text={meta} />}
+          {action}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FacilityFilters({ data, duration, setDuration, aggregation, setAggregation, selectedFacilities, setSelectedFacilities, compact = false }: {
+  data: FacilityAnalytics | null;
+  duration: string;
+  setDuration: (value: string) => void;
+  aggregation?: string;
+  setAggregation?: (value: string) => void;
+  selectedFacilities: string[];
+  setSelectedFacilities: (value: string[]) => void;
+  compact?: boolean;
+}) {
+  const topFacilities = data?.facilityTotals.slice(0, compact ? 5 : 10).map((row) => row.facility) || [];
+  const toggleFacility = (facility: string) => {
+    setSelectedFacilities(selectedFacilities.includes(facility)
+      ? selectedFacilities.filter((item) => item !== facility)
+      : [...selectedFacilities, facility]);
+  };
+  return (
+    <div className="card p-4">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Range</span>
+          <Segmented value={duration} options={durationOptions} onChange={setDuration} />
+          {aggregation && setAggregation && (
+            <>
+              <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Aggregation</span>
+              <Segmented value={aggregation} options={aggregationOptions} onChange={setAggregation} />
+            </>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-black uppercase tracking-[0.16em] text-slate-500">Facilities</span>
+          <button className={`filter-chip ${selectedFacilities.length === 0 ? 'filter-chip-active' : ''}`} onClick={() => setSelectedFacilities([])}>All</button>
+          {topFacilities.map((facility) => (
+            <button key={facility} className={`filter-chip ${selectedFacilities.includes(facility) ? 'filter-chip-active' : ''}`} onClick={() => toggleFacility(facility)}>
+              {facility}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FacilityLineChart({ title, data, facilities, allFacilities, compareMode = false }: {
+  title: string;
+  data: ReturnType<typeof useChartWindow>;
+  facilities: string[];
+  allFacilities: string[];
+  compareMode?: boolean;
+}) {
+  const lineKeys = compareMode
+    ? (facilities.length ? facilities : allFacilities.slice(0, 4))
+    : ['total', 'rollingAverage'];
+  return (
+    <div className="card p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">{title}</h3>
+          <p className="mt-1 text-sm text-slate-500">Zoom, pan, compare, and reset the selected operating window.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="button button-subtle" onClick={data.zoomIn}>Zoom In</button>
+          <button className="button button-subtle" onClick={data.zoomOut}>Zoom Out</button>
+          <button className="button button-subtle" onClick={data.panLeft}>Pan Left</button>
+          <button className="button button-subtle" onClick={data.panRight}>Pan Right</button>
+          <button className="button" onClick={data.reset}>Reset Zoom</button>
+        </div>
+      </div>
+      <div className="mt-5 h-[430px] min-h-[320px]">
+        {data.points.length ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data.points} margin={{ top: 18, right: 28, bottom: 12, left: 0 }}>
+              <CartesianGrid stroke="#e7edf5" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }} />
+              <YAxis tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }} />
+              <Tooltip formatter={(value, name) => [number(value), human(String(name))]} labelFormatter={(label) => `Date: ${label}`} />
+              <Legend />
+              {lineKeys.map((key, index) => (
+                <Line
+                  key={key}
+                  name={key === 'total' ? 'Total Packages' : key === 'rollingAverage' ? 'Rolling Average' : key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={chartColors[index % chartColors.length]}
+                  strokeWidth={key === 'rollingAverage' ? 2 : 2.6}
+                  strokeDasharray={key === 'rollingAverage' ? '6 6' : undefined}
+                  dot={data.points.length < 45 ? { r: 3 } : false}
+                  activeDot={{ r: 5 }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        ) : <EmptyState text="No chart data for this selection." />}
+      </div>
+    </div>
+  );
+}
+
+function FacilityBarChart({ data }: { data: FacilityAnalytics['barSeries'] }) {
+  return (
+    <div className="card p-5">
+      <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Totals</h3>
+      <p className="mt-1 text-sm text-slate-500">Sorted high to low for the selected period.</p>
+      <div className="mt-5 h-[340px]">
+        {data.length ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 18, right: 20, left: 0, bottom: 50 }}>
+              <CartesianGrid stroke="#eef2f7" vertical={false} />
+              <XAxis dataKey="facility" interval={0} angle={-25} textAnchor="end" tick={{ fill: '#475569', fontSize: 11, fontWeight: 700 }} />
+              <YAxis tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }} />
+              <Tooltip formatter={(value) => [number(value), 'Packages']} />
+              <Bar dataKey="total" radius={[10, 10, 0, 0]} fill="#17324d" />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : <EmptyState text="No facility totals yet." />}
+      </div>
+    </div>
+  );
+}
+
+function FacilityPieChart({ data }: { data: FacilityAnalytics['pieSeries'] }) {
+  return (
+    <div className="card p-5">
+      <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Share</h3>
+      <p className="mt-1 text-sm text-slate-500">Share of total packages by facility.</p>
+      <div className="mt-5 grid gap-4 md:grid-cols-[1fr_0.85fr]">
+        <div className="h-[300px]">
+          {data.length ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={data} dataKey="total" nameKey="facility" innerRadius="52%" outerRadius="82%" paddingAngle={2}>
+                  {data.map((entry, index) => <Cell key={entry.facility} fill={chartColors[index % chartColors.length]} />)}
+                </Pie>
+                <Tooltip formatter={(value, name) => [number(value), String(name)]} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <EmptyState text="No share data yet." />}
+        </div>
+        <div className="grid content-center gap-2">
+          {data.map((row, index) => (
+            <div key={row.facility} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+              <span className="flex min-w-0 items-center gap-2 font-bold text-slate-700"><span className="h-2.5 w-2.5 rounded-full" style={{ background: chartColors[index % chartColors.length] }} /> <span className="truncate">{row.facility}</span></span>
+              <span className="shrink-0 font-black text-slate-950">{row.percent}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FacilityHeatmap({ data }: { data: FacilityAnalytics['heatmap'] }) {
+  const max = Math.max(...data.flatMap((day) => day.values.map((item) => item.count)), 1);
+  return (
+    <div className="card p-5">
+      <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Heatmap</h3>
+      <p className="mt-1 text-sm text-slate-500">Recent intensity by day and facility.</p>
+      {data.length ? (
+        <div className="mt-5 overflow-x-auto">
+          <div className="grid min-w-[720px] gap-2">
+            {data.map((day) => (
+              <div key={day.date} className="grid grid-cols-[92px_repeat(8,minmax(58px,1fr))] gap-2">
+                <div className="text-xs font-black text-slate-500">{formatShortDate(day.date)}</div>
+                {day.values.map((item) => {
+                  const opacity = Math.max(0.12, item.count / max);
+                  return (
+                    <div key={`${day.date}-${item.facility}`} title={`${item.facility}: ${number(item.count)}`} className="rounded-lg px-2 py-2 text-center text-[11px] font-black text-white" style={{ background: `rgba(23, 50, 77, ${opacity})` }}>
+                      {item.count ? compactNumber(item.count) : '-'}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : <EmptyState text="No heatmap data yet." />}
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => <div key={index} className="skeleton-card" />)}
+      </div>
+      <div className="skeleton-panel" />
+      <div className="grid gap-5 xl:grid-cols-2"><div className="skeleton-panel" /><div className="skeleton-panel" /></div>
+    </div>
   );
 }
 
@@ -1124,6 +1433,28 @@ function NavIcon({ name }: { name: IconName }) {
 function number(value: unknown) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) ? parsed.toLocaleString() : '0';
+}
+
+function compactNumber(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(parsed) : '0';
+}
+
+function signedNumber(value: unknown) {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed) || parsed === 0) return '0';
+  return `${parsed > 0 ? '+' : '-'}${Math.abs(parsed).toLocaleString()}`;
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(value.includes('T') ? value : `${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return value || 'N/A';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: value.length > 10 ? undefined : 'numeric' }).format(date);
+}
+
+function friendlyOperationsError(message: string) {
+  if (/google|credential|sheet|drive/i.test(message || '')) return 'Live operations source is not connected yet.';
+  return message || 'Facility analytics could not be loaded.';
 }
 
 function human(value: string) {

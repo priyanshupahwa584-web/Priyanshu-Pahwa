@@ -56,6 +56,9 @@ try {
   assert(result.response.status === 503, 'missing Google config should return 503 for data route');
   assert(/credentials are not configured/i.test(result.body.message), 'missing Google config message should be clear');
 
+  result = await request(baseUrl, '/facility-intelligence', { headers: { cookie } });
+  assert(result.response.status === 503, 'Facility Intelligence route should exist and report missing Google config');
+
   result = await request(baseUrl, '/labels/print/test', {
     method: 'POST',
     headers: { cookie },

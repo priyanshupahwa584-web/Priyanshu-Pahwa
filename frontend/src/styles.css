@@ -114,11 +114,15 @@
   }
 
   .button {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-broad-teal hover:text-broad-teal disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 shadow-sm transition hover:border-broad-teal hover:bg-slate-50 hover:text-broad-teal disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .button-primary {
-    @apply border-broad-teal bg-broad-teal text-white hover:bg-broad-cyan hover:text-white;
+    @apply border-slate-900 bg-slate-950 text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] hover:border-slate-800 hover:bg-slate-800 hover:text-white;
+  }
+
+  .button-subtle {
+    @apply border-slate-200 bg-slate-50 text-slate-700 shadow-none hover:border-slate-300 hover:bg-white hover:text-slate-950;
   }
 
   .input {
@@ -131,5 +135,21 @@
 
   .table-head {
     @apply bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500;
+  }
+
+  .filter-chip {
+    @apply rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black uppercase tracking-[0.1em] text-slate-600 shadow-sm transition hover:border-slate-400 hover:text-slate-950;
+  }
+
+  .filter-chip-active {
+    @apply border-slate-900 bg-slate-950 text-white hover:border-slate-900 hover:bg-slate-900 hover:text-white;
+  }
+
+  .skeleton-card {
+    @apply h-36 animate-pulse rounded-xl border border-slate-200 bg-gradient-to-br from-white via-slate-100 to-white shadow-enterprise;
+  }
+
+  .skeleton-panel {
+    @apply h-96 animate-pulse rounded-xl border border-slate-200 bg-gradient-to-br from-white via-slate-100 to-white shadow-enterprise;
   }
 }

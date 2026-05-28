@@ -9,6 +9,7 @@ import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { dataRouter } from './routes/data.js';
 import { exportsRouter } from './routes/exports.js';
+import { facilityIntelligenceRouter } from './routes/facilityIntelligence.js';
 import { healthRouter } from './routes/health.js';
 import { importsRouter } from './routes/imports.js';
 import { labelsRouter } from './routes/labels.js';
@@ -48,6 +49,7 @@ app.get('/', (_req, res) => {
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/facility-intelligence', facilityIntelligenceRouter);
 app.use('/api/data', dataRouter);
 app.use('/api/imports', importsRouter);
 app.use('/api/exports', exportsRouter);
