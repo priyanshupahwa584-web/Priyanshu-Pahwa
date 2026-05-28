@@ -1,0 +1,16 @@
+{
+  "name": "broadreach-print-agent",
+  "version": "1.0.0",
+  "description": "Local Windows print bridge for Broadreach Operations Platform.",
+  "private": true,
+  "type": "module",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js",
+    "build:exe": "npx pkg agent.js --targets node18-win-x64 --output dist/BroadreachPrintAgent.exe"
+  },
+  "dependencies": {
+    "cors": "latest",
+    "express": "latest"
+  }
+}

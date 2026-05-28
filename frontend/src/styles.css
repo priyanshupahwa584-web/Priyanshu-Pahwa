@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: #f4f7fb;
+    color: #142033;
+    font-family: theme('fontFamily.sans');
+  }
+}
+
+@keyframes authDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate3d(24px, -16px, 0) scale(1.05);
+    opacity: 0.82;
+  }
+}
+
+@keyframes authGridShift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 42px 42px;
+  }
+}
+
+.auth-orb {
+  animation: authDrift 10s ease-in-out infinite;
+}
+
+.auth-pattern {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 42px 42px;
+  animation: authGridShift 26s linear infinite;
+  opacity: 0.5;
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-enterprise;
+  }
+
+  .button {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-broad-teal hover:text-broad-teal disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-primary {
+    @apply border-broad-teal bg-broad-teal text-white hover:bg-broad-cyan hover:text-white;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-broad-teal focus:ring-4 focus:ring-cyan-100;
+  }
+
+  .label {
+    @apply grid gap-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500;
+  }
+
+  .table-head {
+    @apply bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500;
+  }
+}

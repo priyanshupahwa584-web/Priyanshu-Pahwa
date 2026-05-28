@@ -1,0 +1,85 @@
+import bcrypt from 'bcryptjs';
+
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'local-verify-secret-change-in-production';
+process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'verify-admin';
+process.env.ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || await bcrypt.hash('verify-pass', 10);
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+
+const { app } = await import('../server.js');
+
+function listen() {
+  return new Promise((resolve) => {
+    const server = app.listen(0, '127.0.0.1', () => resolve(server));
+  });
+}
+
+async function request(baseUrl, path, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
+  return { response, body };
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+const server = await listen();
+const address = server.address();
+const baseUrl = `http://127.0.0.1:${address.port}/api`;
+
+try {
+  let result = await request(baseUrl, '/health');
+  assert(result.response.status === 200, 'health endpoint failed');
+  assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
+
+  result = await request(baseUrl, '/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: 'verify-admin', password: 'wrong' })
+  });
+  assert(result.response.status === 401, 'invalid login should return 401');
+  assert(/Invalid username or password/i.test(result.body.message), 'invalid login message should be clear');
+
+  result = await request(baseUrl, '/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: 'verify-admin', password: 'verify-pass' })
+  });
+  assert(result.response.status === 200, 'valid login failed');
+  const cookie = result.response.headers.get('set-cookie')?.split(';')[0] || '';
+  assert(cookie, 'valid login did not set session cookie');
+
+  result = await request(baseUrl, '/data', { headers: { cookie } });
+  assert(result.response.status === 503, 'missing Google config should return 503 for data route');
+  assert(/credentials are not configured/i.test(result.body.message), 'missing Google config message should be clear');
+
+  result = await request(baseUrl, '/labels/print/test', {
+    method: 'POST',
+    headers: { cookie },
+    body: JSON.stringify({ printerName: 'Verify Printer', type: 'zpl' })
+  });
+  assert(result.response.status === 200, 'label print test route failed');
+  assert(String(result.body.zpl || '').includes('^XA'), 'label test should generate ZPL');
+
+  result = await request(baseUrl, '/labels', { headers: { cookie } });
+  assert(result.response.status === 503, 'Metro Labeling route should exist and report missing Google config');
+
+  result = await request(baseUrl, '/fulfilment/report', { headers: { cookie } });
+  assert(result.response.status === 503, 'Fulfilment report route should exist and report missing Google config');
+
+  result = await request(baseUrl, '/exports', {
+    method: 'POST',
+    headers: { cookie },
+    body: JSON.stringify({ format: 'csv', filters: {} })
+  });
+  assert(result.response.status === 503, 'export route should exist and report missing Google config');
+
+  console.log('Local verification passed.');
+} finally {
+  server.close();
+}

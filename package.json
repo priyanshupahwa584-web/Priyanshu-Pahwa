@@ -1,0 +1,54 @@
+{
+  "name": "broadreach-operations-platform",
+  "version": "3.0.0",
+  "description": "Secure Broadreach operations web platform with React, Express, Google Sheets, and Google Drive.",
+  "private": true,
+  "type": "module",
+  "author": "Priyanshu Pahwa",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "node --watch backend/server.js",
+    "dev:frontend": "vite --host 127.0.0.1 --config frontend/vite.config.ts",
+    "start": "node backend/server.js",
+    "build": "npm run build:frontend",
+    "build:frontend": "vite build --config frontend/vite.config.ts",
+    "preview": "vite preview --host 127.0.0.1 --config frontend/vite.config.ts",
+    "typecheck": "tsc --noEmit -p frontend/tsconfig.json",
+    "lint:syntax": "node --check backend/server.js && node --check backend/config.js && node --check backend/routes/auth.js && node --check backend/routes/data.js && node --check backend/routes/dashboard.js && node --check backend/routes/exports.js && node --check backend/routes/health.js && node --check backend/routes/imports.js && node --check backend/routes/labels.js && node --check backend/routes/fulfilment.js && node --check backend/routes/users.js && node --check backend/routes/logs.js && node --check backend/services/auditService.js && node --check backend/services/authService.js && node --check backend/services/googleSheets.js && node --check backend/services/googleDrive.js && node --check backend/services/importService.js && node --check backend/services/labelImportService.js && node --check backend/services/exportService.js && node --check backend/utils/label.js && node --check print-agent/agent.js",
+    "verify:api": "node backend/utils/verifyLocal.js",
+    "verify": "npm run lint:syntax && npm run typecheck && npm run build && npm run verify:api"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "bcryptjs": "latest",
+    "bwip-js": "^4.10.2",
+    "cors": "latest",
+    "dotenv": "latest",
+    "exceljs": "^4.4.0",
+    "express": "latest",
+    "express-rate-limit": "latest",
+    "googleapis": "^172.0.0",
+    "helmet": "latest",
+    "jsonwebtoken": "latest",
+    "multer": "latest",
+    "pdfkit": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-router-dom": "latest",
+    "recharts": "latest",
+    "zod": "latest"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "latest",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.17",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}
