@@ -1,5 +1,9 @@
+import { fileURLToPath } from 'node:url';
+
+const frontendRoot = fileURLToPath(new URL('.', import.meta.url)).replace(/\\/g, '/');
+
 export default {
-  content: ['./frontend/index.html', './frontend/src/**/*.{ts,tsx}'],
+  content: [`${frontendRoot}index.html`, `${frontendRoot}src/**/*.{ts,tsx}`],
   theme: {
     extend: {
       colors: {

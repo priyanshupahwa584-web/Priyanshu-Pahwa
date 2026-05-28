@@ -195,17 +195,17 @@ Verification checks backend syntax, frontend typecheck/build, login behavior, he
 
 ## Vercel Frontend Deployment
 
-Use the repository root as the Vercel project root, not the `frontend` folder by itself.
+Use the `frontend` folder as the Vercel project root.
 
 Vercel settings:
 
-- Root Directory: repository root
+- Root Directory: `frontend`
 - Install Command: `npm install`
-- Build Command: `npm run build:frontend`
-- Output Directory: `frontend/dist`
+- Build Command: `npm run build`
+- Output Directory: `dist`
 - Environment Variable: `VITE_API_URL=https://priyanshu-pahwa.onrender.com`
 
-The included `vercel.json` handles SPA routing so direct page refreshes work.
+The included `frontend/vercel.json` handles SPA routing so direct page refreshes work.
 
 ## Render Backend Deployment
 
