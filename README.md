@@ -80,12 +80,12 @@ npm run build
 npm start
 ```
 
-Open `http://127.0.0.1:4000`.
+Open the local URL printed by the backend terminal.
 
-For local split frontend/backend development, set `VITE_API_URL` to your local backend URL before running Vite:
+For local split frontend/backend development, set `VITE_API_URL` to your local backend URL before running Vite. Production builds automatically fall back to Render if a local API URL is accidentally configured.
 
 ```bash
-VITE_API_URL=http://127.0.0.1:4000
+VITE_API_URL=<your-local-backend-url>
 ```
 
 ## API
