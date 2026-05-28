@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import express from 'express';
@@ -40,6 +41,10 @@ app.use('/api', helmet({
 app.use('/api', apiRateLimit);
 app.use('/api', sameOriginProtection);
 
+app.get('/', (_req, res) => {
+  res.json({ service: 'Broadreach Operations API', status: 'running' });
+});
+
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/dashboard', dashboardRouter);
@@ -51,12 +56,23 @@ app.use('/api/labels', labelsRouter);
 app.use('/api/fulfilment', fulfilmentRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/logs', logsRouter);
+
+app.use('/api', (_req, res) => {
+  res.status(404).json({ message: 'API route not found.' });
+});
 app.use('/api', errorHandler);
 
-app.use(express.static(config.frontendDist, { fallthrough: true }));
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api')) return next();
-  res.sendFile(path.join(config.frontendDist, 'index.html'));
+const localFrontendIndex = path.join(config.frontendDist, 'index.html');
+if (!config.isProduction && fs.existsSync(localFrontendIndex)) {
+  app.use(express.static(config.frontendDist, { fallthrough: true }));
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    return res.sendFile(localFrontendIndex);
+  });
+}
+
+app.use((_req, res) => {
+  res.status(404).json({ message: 'Route not found. Use /api routes for this service.' });
 });
 
 export function startServer(port = config.port) {
