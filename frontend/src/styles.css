@@ -51,6 +51,63 @@
   opacity: 0.5;
 }
 
+.auth-footer span:first-child {
+  display: none;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sidebar-icon-button {
+  display: inline-grid;
+  height: 2.5rem;
+  width: 2.5rem;
+  place-items: center;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  color: inherit;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.sidebar-icon-button:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+
+.sidebar-collapse-button {
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: rgb(226 232 240);
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.sidebar-collapse-button:hover {
+  background: rgb(255 255 255 / 0.1);
+  color: white;
+}
+
+@media (min-width: 1024px) {
+  .app-shell {
+    grid-template-columns: 292px minmax(0, 1fr);
+  }
+
+  .app-shell-collapsed {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .recharts-legend-wrapper {
+    font-size: 12px;
+  }
+}
+
 @layer components {
   .card {
     @apply rounded-xl border border-slate-200 bg-white shadow-enterprise;

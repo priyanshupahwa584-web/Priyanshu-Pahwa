@@ -39,14 +39,14 @@ async function agentFetch<T>(path: string, options: RequestInit = {}): Promise<T
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.message || 'Local print agent request failed.');
+    throw new Error(payload.message || 'Print service request failed.');
   }
   return response.json() as Promise<T>;
 }
 
 export async function checkAgent() {
   const response = await fetch(`${agentBase}/health`);
-  if (!response.ok) throw new Error('Broadreach Print Agent is offline.');
+  if (!response.ok) throw new Error('Print service is offline.');
   return response.json();
 }
 

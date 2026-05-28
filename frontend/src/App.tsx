@@ -3,7 +3,6 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, downloadExport, downloadFromApi, postJson, putJson } from './services/api';
-import { PRINT_AGENT_URL } from './services/apiConfig';
 import { checkAgent, getAgentToken, getDefaultPrinter, getPrinters, saveAgentPrinter, sendPrintJob, setAgentToken } from './services/printAgent';
 import type { FulfilmentReport, MetroLabelRow, Notice, NoticeType, OperationRow, SectionKey, User } from './types';
 
@@ -11,19 +10,46 @@ const idleTimeoutMs = 30 * 60 * 1000;
 const appVersion = 'v1.0.0';
 
 type IconName = 'grid' | 'data' | 'label' | 'report' | 'import' | 'export' | 'users' | 'activity' | 'printer' | 'settings';
+type NavItem = { key: SectionKey; label: string; path: string; icon: IconName; sidebar?: boolean };
 
-const navItems: Array<{ key: SectionKey; label: string; path: string; icon: IconName }> = [
+const navItems: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: 'grid' },
   { key: 'data', label: 'Operations Data', path: '/data', icon: 'data' },
   { key: 'metro-labeling', label: 'Metro Labeling', path: '/metro-labeling', icon: 'label' },
   { key: 'fulfilment', label: 'Fulfilment Reports', path: '/fulfilment-reports', icon: 'report' },
-  { key: 'imports', label: 'Imports', path: '/imports', icon: 'import' },
-  { key: 'exports', label: 'Exports', path: '/exports', icon: 'export' },
+  { key: 'exports', label: 'Files & Reports', path: '/exports', icon: 'report' },
+  { key: 'imports', label: 'Files & Reports', path: '/imports', icon: 'report', sidebar: false },
   { key: 'users', label: 'Users', path: '/users', icon: 'users' },
   { key: 'activity', label: 'Activity Logs', path: '/activity', icon: 'activity' },
   { key: 'printer-setup', label: 'Printer Setup', path: '/printer-setup', icon: 'printer' },
   { key: 'settings', label: 'Settings', path: '/settings', icon: 'settings' }
 ];
+
+const pageSubtitles: Partial<Record<SectionKey, string>> = {
+  dashboard: 'Live overview of operations, labeling, reports, and activity.',
+  data: 'View and manage daily operations records.',
+  'metro-labeling': 'Upload, search, preview, and print Metro labels.',
+  fulfilment: 'Generate and export completion reports.',
+  imports: 'Upload and review operational files.',
+  exports: 'Create and download report files.',
+  users: 'Manage team access and roles.',
+  activity: 'Review system activity and print history.',
+  'printer-setup': 'Choose and test the label printer for this workstation.',
+  settings: 'Manage platform preferences and system setup.'
+};
+
+const sectionLabels: Partial<Record<SectionKey, string>> = {
+  dashboard: 'Dashboard',
+  data: 'Operations Data',
+  'metro-labeling': 'Metro Labeling',
+  fulfilment: 'Fulfilment Reports',
+  imports: 'File Imports',
+  exports: 'File Exports',
+  users: 'Users',
+  activity: 'Activity Logs',
+  'printer-setup': 'Printer Setup',
+  settings: 'Settings'
+};
 
 function canAccess(user: User, section: SectionKey) {
   return user.role === 'Admin' || user.permissions.includes(section);
@@ -66,7 +92,7 @@ export default function App() {
         <Route path="/users" element={<Guard user={user} section="users"><UsersPage showNotice={showNotice} /></Guard>} />
         <Route path="/activity" element={<Guard user={user} section="activity"><ActivityPage /></Guard>} />
         <Route path="/printer-setup" element={<Guard user={user} section="printer-setup"><PrinterSetupPage showNotice={showNotice} /></Guard>} />
-        <Route path="/settings" element={<Guard user={user} section="settings"><SettingsPage showNotice={showNotice} /></Guard>} />
+        <Route path="/settings" element={<Guard user={user} section="settings"><SettingsPage user={user} showNotice={showNotice} /></Guard>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Shell>
@@ -166,10 +192,10 @@ function AuthFrame({ notice, children }: { notice: Notice; children: ReactNode }
               <img src="/icons/app-logo.png" alt="Broad Reach" className="mb-10 w-64 max-w-full drop-shadow-[0_0_22px_rgba(20,184,184,0.34)] sm:w-72" />
               <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-200">Secure Operations Access</p>
               <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">Broadreach Operations Platform</h1>
-              <p className="mt-4 max-w-md text-base leading-7 text-slate-200 sm:text-lg sm:leading-8">Sign in to access Google Sheets data, Drive file storage, Metro labeling, fulfilment reporting, and exports.</p>
+              <p className="mt-4 max-w-md text-base leading-7 text-slate-200 sm:text-lg sm:leading-8">Sign in to access operations dashboards, Metro labeling, reports, and team tools.</p>
               <div className="mt-8 grid gap-3 text-sm text-slate-200">
                 <p className="rounded-xl border border-white/10 bg-white/5 p-4">Username and password only. No default password is shipped.</p>
-                <p className="rounded-xl border border-white/10 bg-white/5 p-4">Passwords are hashed. Google credentials stay on the backend.</p>
+                <p className="rounded-xl border border-white/10 bg-white/5 p-4">Secure access keeps the operations workspace protected.</p>
               </div>
             </div>
           </div>
@@ -178,8 +204,9 @@ function AuthFrame({ notice, children }: { notice: Notice; children: ReactNode }
             {children}
           </div>
         </div>
-        <footer className="mt-5 flex w-full max-w-5xl flex-col items-center justify-between gap-2 text-xs font-semibold text-slate-300 sm:flex-row">
+        <footer className="auth-footer mt-5 flex w-full max-w-5xl flex-col items-center justify-between gap-2 text-xs font-semibold text-slate-300 sm:flex-row">
           <span>© Broadreach Operations Platform | Internal Use Only</span>
+          <span>&copy; Broadreach Operations Platform | Internal Use Only</span>
           <span>{appVersion}</span>
         </footer>
       </div>
@@ -191,7 +218,14 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
   const location = useLocation();
   const navigate = useNavigate();
   const current = navItems.find((item) => location.pathname.startsWith(item.path)) || navItems[0];
-  const visibleItems = navItems.filter((item) => canAccess(user, item.key));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const visibleItems = navItems
+    .filter((item) => item.sidebar !== false)
+    .filter((item) => item.key === 'exports' ? canAccess(user, 'exports') || canAccess(user, 'imports') : canAccess(user, item.key))
+    .map((item) => item.key === 'exports' && !canAccess(user, 'exports') ? { ...item, path: '/imports' } : item);
+  const subtitle = pageSubtitles[current.key] || 'Work safely and keep operations moving.';
+  const showSidebarLabels = !sidebarCollapsed || mobileSidebarOpen;
 
   const logout = async (message?: string) => {
     await postJson('/auth/logout', {}).catch(() => null);
@@ -214,28 +248,55 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
     };
   }, [user.id]);
 
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
+
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-broad-soft lg:grid-cols-[292px_1fr]">
-      <aside className="bg-broad-navy px-5 py-5 text-white lg:min-h-screen">
-        <img src="/icons/app-logo.png" alt="Broad Reach" className="mb-6 w-56" />
+    <div className={`app-shell min-h-screen bg-broad-soft ${sidebarCollapsed ? 'app-shell-collapsed' : ''}`}>
+      {mobileSidebarOpen && <button aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/45 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />}
+      <aside className={`sidebar fixed inset-y-0 left-0 z-40 flex w-[292px] -translate-x-full flex-col bg-broad-navy px-5 py-5 text-white shadow-2xl transition duration-200 lg:sticky lg:top-0 lg:min-h-screen lg:translate-x-0 lg:shadow-none ${mobileSidebarOpen ? 'translate-x-0' : ''} ${sidebarCollapsed ? 'lg:w-[88px] lg:px-4' : ''}`}>
+        <div className={`mb-6 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+          <img src={showSidebarLabels ? '/icons/app-logo.png' : '/icons/app-icon.png'} alt="Broad Reach" className={showSidebarLabels ? 'w-56 max-w-[190px]' : 'h-11 w-11 rounded-xl object-contain'} />
+          <button aria-label="Close navigation" className="sidebar-icon-button lg:hidden" onClick={() => setMobileSidebarOpen(false)}>
+            <CloseIcon />
+          </button>
+        </div>
         <nav className="grid gap-1">
           {visibleItems.map((item) => (
-            <NavLink key={item.key} to={item.path} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30' : 'text-slate-200 hover:bg-white/10'}`}>
-              <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/10"><NavIcon name={item.icon} /></span>
-              {item.label}
+            <NavLink
+              key={item.key}
+              to={item.path}
+              title={!showSidebarLabels ? item.label : undefined}
+              className={({ isActive }) => {
+                const filesActive = item.key === 'exports' && (location.pathname.startsWith('/exports') || location.pathname.startsWith('/imports'));
+                return `flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition ${!showSidebarLabels ? 'justify-center px-2' : ''} ${isActive || filesActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30' : 'text-slate-200 hover:bg-white/10'}`;
+              }}
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10"><NavIcon name={item.icon} /></span>
+              {showSidebarLabels && <span className="truncate">{item.label}</span>}
             </NavLink>
           ))}
         </nav>
+        <button aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} className={`sidebar-collapse-button mt-auto hidden lg:flex ${sidebarCollapsed ? 'justify-center px-2' : ''}`} onClick={() => setSidebarCollapsed((value) => !value)}>
+          <ChevronIcon collapsed={sidebarCollapsed} />
+          {!sidebarCollapsed && <span>{sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>}
+        </button>
       </aside>
       <main className="min-w-0">
-        <header className="sticky top-0 z-20 flex flex-col gap-4 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-950">{current.label}</h1>
-            <p className="text-sm text-slate-500">Google Sheets data, Google Drive files, and local print-agent output.</p>
+        <header className="sticky top-0 z-20 flex flex-col gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:flex-row md:items-center md:justify-between lg:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <button aria-label="Open navigation" className="sidebar-icon-button border-slate-200 bg-white text-slate-800 lg:hidden" onClick={() => setMobileSidebarOpen(true)}>
+              <MenuIcon />
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-bold text-slate-950 sm:text-2xl">{current.label}</h1>
+              <p className="truncate text-sm text-slate-500">{subtitle}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-3 md:justify-end">
             <div className="grid h-10 w-10 place-items-center rounded-full bg-broad-navy font-bold text-white">{user.displayName?.[0] || user.username[0]}</div>
-            <div>
+            <div className="min-w-0">
               <div className="text-sm font-bold">{user.displayName}</div>
               <div className="text-xs text-slate-500">{user.role}</div>
             </div>
@@ -270,28 +331,22 @@ function DashboardPage({ showNotice }: { showNotice: (type: NoticeType, text: st
   useEffect(() => { load(); }, []);
   return (
     <PageStack>
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h2 className="text-2xl font-black tracking-tight text-slate-950">Dashboard</h2>
-          <p className="text-sm text-slate-500">Simple operations overview. Detailed work stays in its own section.</p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <StatusPill text={`Rows: ${number(data?.rowCount)}`} />
-          <button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh Data'}</button>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <StatusPill text={`${number(data?.rowCount)} records`} />
+        <button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh Data'}</button>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Kpi label="Current Output" value={number(data?.kpis?.totalPieces)} tone="teal" />
-        <Kpi label="Active Facilities" value={number(data?.kpis?.throughput)} helper="Throughput avg" />
-        <Kpi label="Gaylords Completed" value={number(data?.kpis?.printed)} helper="Metro printed" />
-        <Kpi label="Gaylords Left" value={number(data?.kpis?.pending)} helper="Pending labels" tone="amber" />
-        <Kpi label="Alerts" value={number(data?.kpis?.errors)} helper="Label errors" tone="red" />
+        <Kpi label="Total Pieces" value={number(data?.kpis?.totalPieces)} icon="data" tone="teal" />
+        <Kpi label="Throughput" value={number(data?.kpis?.throughput)} icon="activity" helper="Average pace" />
+        <Kpi label="Metro Printed" value={number(data?.kpis?.printed)} icon="label" helper="Labels completed" />
+        <Kpi label="Pending Labels" value={number(data?.kpis?.pending)} icon="report" tone="amber" />
+        <Kpi label="Label Errors" value={number(data?.kpis?.errors)} icon="activity" tone="red" />
       </div>
       <div className="card p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="font-black uppercase tracking-[0.08em] text-slate-950">Output Trend</h2>
-            <p className="text-sm text-slate-500">Actual, previous, and moving average view from table data.</p>
+            <p className="text-sm text-slate-500">Actual, previous, and moving average.</p>
           </div>
           <Segmented value={range} options={['Day', 'Week', 'Month', 'Year']} onChange={setRange} />
         </div>
@@ -309,7 +364,7 @@ function DashboardPage({ showNotice }: { showNotice: (type: NoticeType, text: st
                 <Line name="Moving Average" type="monotone" dataKey="pieces" stroke="#00a36c" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
-          ) : <EmptyState text="No operations data yet. Import or add rows to OperationsData." />}
+          ) : <EmptyState text="No records yet." />}
         </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
@@ -392,7 +447,7 @@ function MetroLabelingPage({ showNotice }: { showNotice: (type: NoticeType, text
     <PageStack>
       <PageHeader
         title="Metro Labeling"
-        subtitle="Upload Metro label files, search tracking numbers, preview 4x2 labels, and print through the local Windows agent."
+        subtitle="Upload, search, preview, and print Metro labels."
         action={<button className="button" onClick={() => load().catch((error) => showNotice('error', error.message))}>Refresh</button>}
       />
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
@@ -402,7 +457,7 @@ function MetroLabelingPage({ showNotice }: { showNotice: (type: NoticeType, text
             <input className="input" type="file" accept=".csv,.xlsx,.xlsm,.json" onChange={(event) => setFile(event.target.files?.[0] || null)} />
             <button className="button button-primary whitespace-nowrap" disabled={busy} onClick={upload}>{busy ? 'Working...' : 'Upload Label File'}</button>
           </div>
-          <p className="mt-3 text-sm text-slate-500">Expected fields include Tracking Number, Driver, Routing Sequence, Delivery Address, City, and Postal Code. No routes upload is required.</p>
+          <p className="mt-3 text-sm text-slate-500">Use a Metro label file with tracking, driver, route, address, city, and postal code columns.</p>
         </div>
         <LabelPreview row={preview} />
       </div>
@@ -415,9 +470,10 @@ function MetroLabelingPage({ showNotice }: { showNotice: (type: NoticeType, text
         </div>
       </div>
       <DataTable
-        title="MetroLabeling"
+        title="Metro Labels"
         rows={rows}
-        columns={['trackingNumber', 'customerName', 'service', 'route', 'status', 'printedAt', 'printedBy', 'reprintCount', 'errorMessage']}
+        columns={['trackingNumber', 'customerName', 'route', 'status', 'printedAt', 'errorMessage']}
+        emptyText="Upload a file to begin."
         select={{ selected, onChange: setSelected }}
         onRowClick={(row) => setPreview(row)}
         actions={(row: MetroLabelRow) => (
@@ -440,7 +496,7 @@ function FulfilmentReportsPage({ showNotice }: { showNotice: (type: NoticeType, 
   const generate = async () => {
     try {
       await postJson('/fulfilment/report/generate', form);
-      showNotice('success', 'Fulfilment report generated from MetroLabeling data.');
+      showNotice('success', 'Fulfilment report generated.');
       await load();
     } catch (error: any) {
       showNotice('error', error.message);
@@ -456,7 +512,7 @@ function FulfilmentReportsPage({ showNotice }: { showNotice: (type: NoticeType, 
   };
   return (
     <PageStack>
-      <PageHeader title="Fulfilment Reports" subtitle="Generate completion reports from actual MetroLabeling rows and export real data files." />
+      <PageHeader title="Fulfilment Reports" subtitle="Generate and export completion reports." />
       <FormCard title="Generate Report">
         <FormGrid cols="grid-cols-1 md:grid-cols-4">
           <TextInput label="Report Date" value={form.reportDate} onChange={(reportDate) => setForm({ ...form, reportDate })} />
@@ -471,7 +527,7 @@ function FulfilmentReportsPage({ showNotice }: { showNotice: (type: NoticeType, 
           <button className="button" onClick={() => exportReport('pdf')}>Export PDF</button>
         </div>
       </FormCard>
-      <DataTable title="FulfilmentReports" rows={rows} columns={['reportDate', 'client', 'service', 'route', 'totalUploaded', 'totalPrinted', 'pending', 'errors', 'completionPercent', 'createdBy', 'createdAt']} />
+      <DataTable title="Fulfilment Reports" rows={rows} columns={['reportDate', 'client', 'service', 'route', 'totalUploaded', 'totalPrinted', 'pending', 'errors', 'completionPercent']} emptyText="No reports yet." />
     </PageStack>
   );
 }
@@ -492,7 +548,7 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
       setPrinters(response.printers || []);
       setPrinter(printer || response.defaultPrinter || response.printers?.[0]?.Name || '');
       setStatus('Online');
-      showNotice('success', 'Broadreach Print Agent is online.');
+      showNotice('success', 'Print service is online.');
     } catch (error: any) {
       setStatus('Offline');
       showNotice('error', error.message);
@@ -528,28 +584,27 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
 
   return (
     <PageStack>
-      <PageHeader title="Printer Setup" subtitle="Connect this browser session to the local Windows Print Agent on this workstation." />
+      <PageHeader title="Printer Setup" subtitle="Choose and test the label printer for this workstation." />
       <div className="grid gap-5 xl:grid-cols-[1fr_0.85fr]">
-        <FormCard title="Local Agent Connection">
+        <FormCard title="Printer Connection">
           <FormGrid cols="grid-cols-1">
-            <TextInput label="Local Agent Token" value={token} onChange={setToken} />
+            <TextInput label="Printer Access Token" value={token} onChange={setToken} />
             <SelectInput label="Default Label Printer" value={printer} options={['', ...printers.map((item) => item.Name)]} onChange={setPrinter} />
           </FormGrid>
           <div className="mt-4 flex flex-wrap gap-3">
-            <button className="button button-primary" disabled={busy} onClick={detect}>{busy ? 'Checking...' : 'Detect Agent & Printers'}</button>
+            <button className="button button-primary" disabled={busy} onClick={detect}>{busy ? 'Checking...' : 'Find Printers'}</button>
             <button className="button" onClick={savePrinter}>Save Printer</button>
             <button className="button" disabled={busy} onClick={testPrint}>Test 4x2 Label</button>
           </div>
         </FormCard>
-        <Panel title="Agent Status">
+        <Panel title="Printer Status">
           <div className="grid gap-3 text-sm text-slate-700">
             <MiniStatus label="Status" value={status} />
-            <MiniStatus label="Endpoint" value={PRINT_AGENT_URL} />
             <MiniStatus label="Saved Printer" value={printer || 'Not selected'} />
           </div>
         </Panel>
       </div>
-      <DataTable title="Windows Printers" rows={printers} columns={['Name', 'DriverName', 'PortName', 'PrinterStatus']} />
+      <DataTable title="Available Printers" rows={printers} columns={['Name', 'PrinterStatus']} emptyText="No printers found." />
     </PageStack>
   );
 }
@@ -587,7 +642,7 @@ function DataPage({ showNotice }: { showNotice: (type: NoticeType, text: string)
   };
   return (
     <PageStack>
-      <PageHeader title="Operations Data" subtitle="Structured data from Google Sheets tab OperationsData." action={<button className="button" onClick={load}>Apply Filters</button>} />
+      <PageHeader title="Operations Data" subtitle="View and manage daily operations records." action={<button className="button" onClick={load}>Apply Filters</button>} />
       <div className="card p-5">
         <FormGrid cols="grid-cols-1 md:grid-cols-5">
           <TextInput label="Date From" value={filters.dateFrom} onChange={(dateFrom) => setFilters({ ...filters, dateFrom })} />
@@ -605,7 +660,7 @@ function DataPage({ showNotice }: { showNotice: (type: NoticeType, text: string)
         </FormGrid>
         <button className="button button-primary mt-4" onClick={save}>{editingId ? 'Save Changes' : 'Add Row'}</button>
       </FormCard>
-      <DataTable title="OperationsData" rows={rows} columns={['date', 'facility', 'pieces', 'throughput', 'productivity', 'cycleTime', 'status', 'notes']} actions={(row) => (
+      <DataTable title="Daily Records" rows={rows} columns={['date', 'facility', 'pieces', 'throughput', 'status']} emptyText="No records yet." actions={(row) => (
         <div className="flex gap-2">
           <button className="button" onClick={() => { setEditingId(row.id); setForm(row); }}>Edit</button>
           <button className="button" onClick={() => remove(row.id)}>Delete</button>
@@ -628,7 +683,7 @@ function ImportsPage({ showNotice }: { showNotice: (type: NoticeType, text: stri
     try {
       const response = await api<any>('/imports', { method: 'POST', body: form });
       setErrors([]);
-      showNotice('success', `Imported ${response.importedRows} rows to Google Sheets.`);
+      showNotice('success', `Imported ${response.importedRows} rows.`);
       load();
     } catch (error: any) {
       setErrors(Array.isArray(error.details) ? error.details : []);
@@ -637,15 +692,19 @@ function ImportsPage({ showNotice }: { showNotice: (type: NoticeType, text: stri
   };
   return (
     <PageStack>
-      <PageHeader title="Imports" subtitle="Upload operational CSV, XLSX, or JSON. Files are stored in Google Drive and rows are saved to Google Sheets." />
+      <PageHeader title="Files & Reports" subtitle="Upload and review operational files." />
       <div className="card p-5">
+        <div className="mb-4 flex flex-wrap gap-2">
+          <NavLink className="button button-primary" to="/imports">Imports</NavLink>
+          <NavLink className="button" to="/exports">Exports</NavLink>
+        </div>
         <div className="flex flex-col gap-3 md:flex-row">
           <input className="input" type="file" accept=".csv,.xlsx,.xlsm,.json" onChange={(event) => setFile(event.target.files?.[0] || null)} />
           <button className="button button-primary" onClick={upload}>Validate & Import</button>
         </div>
         {errors.length > 0 && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{errors.slice(0, 8).map((error) => <div key={`${error.row}-${error.message}`}>Row {error.row}: {error.message}</div>)}</div>}
       </div>
-      <DataTable title="Upload Logs" rows={logs} columns={['createdAt', 'fileName', 'status', 'message', 'driveFileId', 'uploadedBy']} />
+      <DataTable title="Import History" rows={logs} columns={['createdAt', 'fileName', 'status', 'message', 'uploadedBy']} emptyText="No import history yet." />
     </PageStack>
   );
 }
@@ -666,8 +725,12 @@ function ExportsPage({ showNotice }: { showNotice: (type: NoticeType, text: stri
   };
   return (
     <PageStack>
-      <PageHeader title="Exports" subtitle="Export filtered operations data as real CSV, XLSX, or PDF files. No screenshots." />
+      <PageHeader title="Files & Reports" subtitle="Create and download report files." />
       <div className="card p-5">
+        <div className="mb-4 flex flex-wrap gap-2">
+          <NavLink className="button" to="/imports">Imports</NavLink>
+          <NavLink className="button button-primary" to="/exports">Exports</NavLink>
+        </div>
         <FormGrid cols="grid-cols-1 md:grid-cols-4">
           <TextInput label="Date From" value={filters.dateFrom} onChange={(dateFrom) => setFilters({ ...filters, dateFrom })} />
           <TextInput label="Date To" value={filters.dateTo} onChange={(dateTo) => setFilters({ ...filters, dateTo })} />
@@ -680,7 +743,7 @@ function ExportsPage({ showNotice }: { showNotice: (type: NoticeType, text: stri
           <button className="button button-primary" onClick={() => runExport('pdf')}>Export PDF</button>
         </div>
       </div>
-      <DataTable title="Export Logs" rows={logs} columns={['createdAt', 'format', 'rowCount', 'fileName', 'driveFileId', 'requestedBy']} />
+      <DataTable title="Export History" rows={logs} columns={['createdAt', 'format', 'rowCount', 'fileName', 'requestedBy']} emptyText="No export history yet." />
     </PageStack>
   );
 }
@@ -707,7 +770,7 @@ function UsersPage({ showNotice }: { showNotice: (type: NoticeType, text: string
   };
   return (
     <PageStack>
-      <PageHeader title="Users" subtitle="Admin creates users, assigns roles, and controls page access." />
+      <PageHeader title="Users" subtitle="Manage team access and roles." />
       <FormCard title="Create User">
         <FormGrid cols="grid-cols-1 md:grid-cols-5">
           <TextInput label="Username" value={form.username} onChange={(username) => setForm({ ...form, username })} />
@@ -756,16 +819,17 @@ function ActivityPage() {
   }, []);
   return (
     <PageStack>
-      <PageHeader title="Activity Logs" subtitle="Login, upload, export, print, and admin activity from Google Sheets." />
-      <DataTable title="Audit Logs" rows={logs} columns={['createdAt', 'actor', 'action', 'entity', 'ip', 'device']} />
-      <DataTable title="Print Logs" rows={printLogs} columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'userId', 'errorMessage']} />
-      <DataTable title="Upload Logs" rows={uploads} columns={['createdAt', 'fileName', 'status', 'uploadedBy', 'driveFileId']} />
-      <DataTable title="Export Logs" rows={exportsLog} columns={['createdAt', 'format', 'rowCount', 'requestedBy', 'driveFileId']} />
+      <PageHeader title="Activity Logs" subtitle="Review system activity and print history." />
+      <DataTable title="Team Activity" rows={logs} columns={['createdAt', 'actor', 'action', 'entity']} emptyText="No activity found." />
+      <DataTable title="Print History" rows={printLogs} columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'errorMessage']} emptyText="No print history yet." />
+      <DataTable title="Import History" rows={uploads} columns={['createdAt', 'fileName', 'status', 'uploadedBy']} emptyText="No import history yet." />
+      <DataTable title="Export History" rows={exportsLog} columns={['createdAt', 'format', 'rowCount', 'requestedBy']} emptyText="No export history yet." />
     </PageStack>
   );
 }
 
-function SettingsPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
+function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: NoticeType, text: string) => void }) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const initialize = async () => {
     try {
       const response = await postJson<{ message: string }>('/health/initialize-google-tabs', {});
@@ -776,11 +840,29 @@ function SettingsPage({ showNotice }: { showNotice: (type: NoticeType, text: str
   };
   return (
     <PageStack>
-      <PageHeader title="Settings" subtitle="Production connection tools. Credentials are backend environment variables only." />
-      <Panel title="Google Sheets / Drive">
-        <p className="mb-4 text-slate-600">Initialize or repair required tabs: OperationsData, Users, AuditLogs, UploadLogs, ExportLogs, MetroLabeling, FulfilmentReports, and PrintLogs.</p>
-        <button className="button button-primary" onClick={initialize}>Initialize Google Tabs</button>
+      <PageHeader title="Settings" subtitle="Manage platform preferences and system setup." />
+      <Panel title="Platform Preferences">
+        <div className="grid gap-3 md:grid-cols-3">
+          <MiniStatus label="Theme" value="Enterprise light" />
+          <MiniStatus label="Session" value="Protected" />
+          <MiniStatus label="Access" value={user.role} />
+        </div>
       </Panel>
+      {user.role === 'Admin' && (
+        <Panel title="Advanced setup">
+          <button className="button" onClick={() => setAdvancedOpen((value) => !value)}>
+            {advancedOpen ? 'Hide advanced setup' : 'Show advanced setup'}
+          </button>
+          {advancedOpen && (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="text-sm font-black uppercase tracking-[0.14em] text-amber-700">System Setup</div>
+              <p className="mt-2 text-sm font-semibold text-amber-800">Admin use only.</p>
+              <p className="mt-2 text-sm text-amber-800">Use this only when the platform setup needs to be initialized or repaired.</p>
+              <button className="button button-primary mt-4" onClick={initialize}>Initialize Required Setup</button>
+            </div>
+          )}
+        </Panel>
+      )}
     </PageStack>
   );
 }
@@ -869,7 +951,7 @@ function PermissionChecks({ sections, value, onChange, disabled }: { sections: s
       {sections.map((section) => (
         <label key={section} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
           <input type="checkbox" disabled={disabled} checked={checked.includes(section)} onChange={(event) => onChange(event.target.checked ? [...value, section] : value.filter((item) => item !== section))} />
-          {human(section)}
+          {sectionLabels[section as SectionKey] || human(section)}
         </label>
       ))}
     </div>
@@ -880,13 +962,24 @@ function PageStack({ children }: { children: ReactNode }) {
   return <div className="mx-auto grid max-w-[1540px] gap-5">{children}</div>;
 }
 
-function PageHeader({ title, subtitle, action }: { title: string; subtitle: string; action?: ReactNode }) {
-  return <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><h2 className="text-2xl font-bold tracking-tight text-slate-950">{title}</h2><p className="mt-1 text-sm text-slate-500">{subtitle}</p></div>{action}</div>;
+function PageHeader({ action }: { title: string; subtitle: string; action?: ReactNode }) {
+  return action ? <div className="flex justify-end">{action}</div> : null;
 }
 
-function Kpi({ label, value, helper, tone = 'slate' }: { label: string; value: string; helper?: string; tone?: 'slate' | 'teal' | 'amber' | 'red' }) {
-  const accent = tone === 'teal' ? 'bg-cyan-50 text-broad-teal' : tone === 'amber' ? 'bg-amber-50 text-amber-600' : tone === 'red' ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-600';
-  return <div className="card p-5"><div className={`mb-3 inline-flex rounded-lg px-3 py-2 text-xs font-black uppercase tracking-[0.14em] ${accent}`}>{label}</div><div className="text-3xl font-black text-slate-950">{value}</div>{helper && <div className="mt-2 text-sm font-semibold text-slate-500">{helper}</div>}</div>;
+function Kpi({ label, value, helper, tone = 'slate', icon }: { label: string; value: string; helper?: string; tone?: 'slate' | 'teal' | 'amber' | 'red'; icon?: IconName }) {
+  const accent = tone === 'teal' ? 'bg-cyan-50 text-broad-teal' : tone === 'amber' ? 'bg-amber-50 text-amber-600' : tone === 'red' ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-blue-600';
+  return (
+    <div className="card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
+          <div className="mt-3 text-3xl font-black text-slate-950">{value}</div>
+        </div>
+        {icon && <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${accent}`}><NavIcon name={icon} /></div>}
+      </div>
+      {helper && <div className="mt-3 text-sm font-semibold text-slate-500">{helper}</div>}
+    </div>
+  );
 }
 
 function MiniStatus({ label, value }: { label: string; value: string }) {
@@ -921,7 +1014,7 @@ function Segmented({ value, options, onChange }: { value: string; options: strin
   );
 }
 
-function DataTable({ title, rows, columns, actions, select, onRowClick }: { title: string; rows: any[]; columns: string[]; actions?: (row: any) => ReactNode; select?: { selected: string[]; onChange: (ids: string[]) => void }; onRowClick?: (row: any) => void }) {
+function DataTable({ title, rows, columns, actions, select, onRowClick, emptyText = 'No records yet.' }: { title: string; rows: any[]; columns: string[]; actions?: (row: any) => ReactNode; select?: { selected: string[]; onChange: (ids: string[]) => void }; onRowClick?: (row: any) => void; emptyText?: string }) {
   const allIds = rows.map((row) => row.id).filter(Boolean);
   const allSelected = Boolean(allIds.length) && allIds.every((id) => select?.selected.includes(id));
   const toggleAll = () => {
@@ -935,7 +1028,7 @@ function DataTable({ title, rows, columns, actions, select, onRowClick }: { titl
   return (
     <div className="card overflow-hidden">
       <div className="border-b border-slate-200 px-5 py-4"><h3 className="font-bold text-slate-950">{title}</h3></div>
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full">
           <thead className="table-head">
             <tr>
@@ -951,9 +1044,28 @@ function DataTable({ title, rows, columns, actions, select, onRowClick }: { titl
                 {columns.map((column) => <td key={column} className="max-w-sm cursor-default truncate px-4 py-3" onClick={() => onRowClick?.(row)}>{formatCell(row[column])}</td>)}
                 {actions && <td className="px-4 py-3">{actions(row)}</td>}
               </tr>
-            )) : <tr><td className="px-4 py-8 text-center text-slate-500" colSpan={columns.length + (actions ? 1 : 0) + (select ? 1 : 0)}>No records yet.</td></tr>}
+            )) : <tr><td className="px-4 py-8 text-center text-slate-500" colSpan={columns.length + (actions ? 1 : 0) + (select ? 1 : 0)}>{emptyText}</td></tr>}
           </tbody>
         </table>
+      </div>
+      <div className="grid gap-3 p-4 md:hidden">
+        {rows?.length ? rows.map((row, index) => (
+          <div key={row.id || index} className="rounded-xl border border-slate-200 bg-slate-50 p-4" onClick={() => onRowClick?.(row)}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-black text-slate-950">{formatCell(row[columns[0]]) || `Record ${index + 1}`}</div>
+                {columns.slice(1, 5).map((column) => (
+                  <div key={column} className="mt-2 grid grid-cols-[110px_1fr] gap-2 text-xs">
+                    <span className="font-bold uppercase tracking-[0.1em] text-slate-500">{human(column)}</span>
+                    <span className="truncate font-semibold text-slate-800">{formatCell(row[column]) || '-'}</span>
+                  </div>
+                ))}
+              </div>
+              {select && row.id && <input type="checkbox" checked={select.selected.includes(row.id)} onChange={() => toggleOne(row.id)} onClick={(event) => event.stopPropagation()} />}
+            </div>
+            {actions && <div className="mt-3 flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>{actions(row)}</div>}
+          </div>
+        )) : <EmptyState text={emptyText} />}
       </div>
     </div>
   );
@@ -967,6 +1079,30 @@ function NoticeBanner({ notice }: { notice: Notice }) {
   if (!notice) return null;
   const tone = notice.type === 'error' ? 'border-red-200 bg-red-50 text-red-800' : notice.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-blue-200 bg-blue-50 text-blue-800';
   return <div className={`mb-5 rounded-xl border px-4 py-3 text-sm font-semibold shadow-enterprise ${tone}`}>{notice.text}</div>;
+}
+
+function MenuIcon() {
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24">
+      {collapsed ? <path d="m9 6 6 6-6 6" /> : <path d="m15 6-6 6 6 6" />}
+    </svg>
+  );
 }
 
 function NavIcon({ name }: { name: IconName }) {
