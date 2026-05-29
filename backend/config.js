@@ -69,7 +69,7 @@ function packageVersion() {
 
 function configuredCorsOrigins() {
   const defaultOrigins = process.env.NODE_ENV === 'production'
-    ? 'https://*.vercel.app'
+    ? 'https://priyanshu-pahwa.vercel.app,https://*.vercel.app'
     : 'http://127.0.0.1:4000,http://localhost:4000,http://127.0.0.1:5173,http://localhost:5173';
   const raw = process.env.CORS_ORIGIN || defaultOrigins;
   const origins = raw.split(',').map((origin) => origin.trim()).filter(Boolean);

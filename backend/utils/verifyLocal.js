@@ -39,6 +39,11 @@ try {
   assert(result.body.adminAuth?.passwordHashConfigured === true, 'health endpoint should report admin hash configured');
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
 
+  result = await request(baseUrl, '/auth/me');
+  assert(result.response.status === 401, 'unauthenticated auth/me should return 401');
+  assert(result.body.authenticated === false, 'auth/me should report authenticated=false');
+  assert(result.body.sessionPresent === false, 'auth/me should report sessionPresent=false');
+
   result = await request(baseUrl, '/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username: 'Priyanshu', password: 'wrong' })
@@ -53,6 +58,13 @@ try {
   assert(result.response.status === 200, 'valid login failed');
   const cookie = result.response.headers.get('set-cookie')?.split(';')[0] || '';
   assert(cookie, 'valid login did not set session cookie');
+  assert(result.body.accessToken, 'valid login did not return fallback access token');
+  assert(result.body.accessTokenExpiresAt, 'valid login did not return fallback token expiry');
+
+  result = await request(baseUrl, '/auth/me', { headers: { authorization: `Bearer ${result.body.accessToken}` } });
+  assert(result.response.status === 200, 'auth/me bearer fallback failed');
+  assert(result.body.authenticated === true, 'auth/me should report authenticated=true');
+  assert(result.body.sessionPresent === true, 'auth/me should report sessionPresent=true');
 
   result = await request(baseUrl, '/auth/security', { headers: { cookie } });
   assert(result.response.status === 200, 'security profile route failed');

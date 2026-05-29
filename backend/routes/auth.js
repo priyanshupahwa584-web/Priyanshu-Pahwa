@@ -1,6 +1,6 @@
 import express from 'express';
 import { config } from '../config.js';
-import { authRequired } from '../middleware/auth.js';
+import { authRequired, resolveAuthContext } from '../middleware/auth.js';
 import { loginRateLimit } from '../middleware/security.js';
 import { audit } from '../services/auditService.js';
 import {
@@ -50,7 +50,11 @@ authRouter.post('/login', loginRateLimit, async (req, res, next) => {
     const session = await createSession(result.user, { rememberDevice: body.rememberDevice, secure, ip: req.ip, device: device(req) });
     setSessionCookie(res, session.token, session.maxAge);
     await audit({ actor: result.user.username, action: 'login_success', entity: 'auth', entityId: result.user.id, ip: req.ip, device: device(req), metadata: { rememberDevice: session.remembered } });
-    res.json({ user: result.user });
+    res.json({
+      user: result.user,
+      accessToken: session.accessToken,
+      accessTokenExpiresAt: session.accessTokenExpiresAt
+    });
   } catch (error) {
     if (error?.name === 'ZodError') return next(error);
     if (error?.code === 'admin_auth_config') {
@@ -71,8 +75,33 @@ authRouter.post('/logout', authRequired, async (req, res) => {
   res.json({ ok: true });
 });
 
-authRouter.get('/me', authRequired, (req, res) => {
-  res.json({ user: req.user });
+authRouter.get('/me', async (req, res) => {
+  try {
+    const context = await resolveAuthContext(req);
+    if (!context.ok) {
+      const message = context.reason === 'missing' ? 'Login required.' : 'Session expired. Please sign in again.';
+      return res.status(401).json({
+        message,
+        authenticated: false,
+        sessionPresent: context.sessionPresent,
+        tokenPresent: context.tokenPresent
+      });
+    }
+    res.json({
+      authenticated: true,
+      sessionPresent: true,
+      tokenPresent: context.tokenPresent,
+      tokenSource: context.tokenSource,
+      user: context.publicUser
+    });
+  } catch {
+    res.status(401).json({
+      message: 'Session expired. Please sign in again.',
+      authenticated: false,
+      sessionPresent: false,
+      tokenPresent: true
+    });
+  }
 });
 
 authRouter.get('/security', authRequired, async (req, res, next) => {

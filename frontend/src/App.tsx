@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { api, downloadExport, downloadFromApi, postJson, putJson } from './services/api';
+import { api, clearAccessToken, downloadExport, downloadFromApi, postJson, putJson, storeAccessToken } from './services/api';
 import { checkAgent, getAgentToken, getDefaultPrinter, getPrinters, saveAgentPrinter, sendPrintJob, setAgentToken } from './services/printAgent';
 import type { FacilityAnalytics, FulfilmentReport, MetroLabelRow, Notice, NoticeType, OperationRow, SectionKey, User } from './types';
 
@@ -185,7 +185,7 @@ function LoginScreen({ onLogin, notice, showNotice }: { onLogin: (user: User) =>
     }
     setBusy(true);
     try {
-      const response = await postJson<{ user?: User; requiresTwoFactor?: boolean; message?: string }>('/auth/login', {
+      const response = await postJson<{ user?: User; requiresTwoFactor?: boolean; message?: string; accessToken?: string; accessTokenExpiresAt?: string }>('/auth/login', {
         ...form,
         totpCode: useRecoveryCode ? '' : secondFactor,
         recoveryCode: useRecoveryCode ? secondFactor : '',
@@ -197,6 +197,9 @@ function LoginScreen({ onLogin, notice, showNotice }: { onLogin: (user: User) =>
         return;
       }
       if (!response.user) throw new Error('Login response was incomplete.');
+      if (response.accessToken && response.accessTokenExpiresAt) {
+        storeAccessToken(response.accessToken, response.accessTokenExpiresAt);
+      }
       onLogin(response.user);
     } catch (error: any) {
       showNotice('error', error.status === 401 ? 'Invalid username or password.' : error.message);
@@ -311,6 +314,7 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
 
   const logout = async (message?: string) => {
     await postJson('/auth/logout', {}).catch(() => null);
+    clearAccessToken();
     setUser(null);
     navigate('/');
     if (message) showNotice('info', message);

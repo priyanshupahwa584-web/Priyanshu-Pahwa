@@ -232,7 +232,14 @@ export async function createSession(user, { rememberDevice = false, secure = fal
     config.jwtSecret,
     { expiresIn: canRemember ? '30d' : config.jwtExpiresIn }
   );
-  return { token, maxAge, remembered: canRemember, session };
+  const accessTokenMaxAge = Math.min(maxAge, 8 * 60 * 60);
+  const accessToken = jwt.sign(
+    { sub: user.id, username: user.username, role: user.role, sid: session.id },
+    config.jwtSecret,
+    { expiresIn: accessTokenMaxAge }
+  );
+  const accessTokenExpiresAt = new Date(Date.now() + accessTokenMaxAge * 1000).toISOString();
+  return { token, accessToken, accessTokenExpiresAt, maxAge, remembered: canRemember, session };
 }
 
 export async function validateSession(user, sessionId) {

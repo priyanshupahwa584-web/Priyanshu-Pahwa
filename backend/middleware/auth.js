@@ -9,26 +9,61 @@ export function cookieValue(req, name) {
   return cookies[name] || '';
 }
 
+export async function resolveAuthContext(req) {
+  const auth = req.get('authorization') || '';
+  const bearerToken = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  const cookieToken = cookieValue(req, config.cookieName);
+  const token = bearerToken || cookieToken;
+  const tokenPresent = Boolean(token);
+  if (!token) return { ok: false, authenticated: false, tokenPresent, sessionPresent: false, reason: 'missing' };
+
+  const payload = verifyToken(token);
+  const user = await findUser(payload.username);
+  if (!user || String(user.active).toLowerCase() === 'false') {
+    return { ok: false, authenticated: false, tokenPresent, sessionPresent: false, reason: 'user' };
+  }
+
+  const session = await validateSession(user, payload.sid);
+  if (!session) return { ok: false, authenticated: false, tokenPresent, sessionPresent: false, reason: 'session', user };
+
+  return {
+    ok: true,
+    authenticated: true,
+    tokenPresent,
+    sessionPresent: true,
+    tokenSource: bearerToken ? 'authorization' : 'cookie',
+    user,
+    publicUser: publicUser(user),
+    sessionId: payload.sid,
+    session
+  };
+}
+
 export function authRequired(req, res, next) {
   Promise.resolve()
     .then(async () => {
-      const auth = req.get('authorization') || '';
-      const token = auth.startsWith('Bearer ') ? auth.slice(7) : cookieValue(req, config.cookieName);
-      if (!token) return res.status(401).json({ message: 'Login required.' });
-      const payload = verifyToken(token);
-      const user = await findUser(payload.username);
-      if (!user || String(user.active).toLowerCase() === 'false') {
-        return res.status(401).json({ message: 'Session expired. Please sign in again.' });
+      const context = await resolveAuthContext(req);
+      if (!context.ok) {
+        const message = context.reason === 'missing' ? 'Login required.' : 'Session expired. Please sign in again.';
+        return res.status(401).json({
+          message,
+          authenticated: false,
+          sessionPresent: context.sessionPresent,
+          tokenPresent: context.tokenPresent
+        });
       }
-      const session = await validateSession(user, payload.sid);
-      if (!session) return res.status(401).json({ message: 'Session expired. Please sign in again.' });
-      req.user = publicUser(user);
-      req.user.sessionId = payload.sid;
-      req.sessionId = payload.sid;
-      req.session = session;
+      req.user = context.publicUser;
+      req.user.sessionId = context.sessionId;
+      req.sessionId = context.sessionId;
+      req.session = context.session;
       return next();
     })
-    .catch(() => res.status(401).json({ message: 'Session expired. Please sign in again.' }));
+    .catch(() => res.status(401).json({
+      message: 'Session expired. Please sign in again.',
+      authenticated: false,
+      sessionPresent: false,
+      tokenPresent: false
+    }));
 }
 
 export function requireAdmin(req, res, next) {
