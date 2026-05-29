@@ -517,6 +517,45 @@ export async function getUserSessions(userId) {
   }));
 }
 
+export async function resetUserPassword(userId, password, { forcePasswordChange = true } = {}) {
+  const updated = await updateRowById(tabs.users, userId, {
+    passwordHash: await bcrypt.hash(password, 12),
+    passwordChangedAt: nowIso(),
+    forcePasswordChange: forcePasswordChange ? 'true' : 'false',
+    failedLoginCount: 0,
+    lockedUntil: '',
+    updatedAt: nowIso()
+  });
+  return updated ? publicUser(updated) : null;
+}
+
+export async function userActivity(userId) {
+  const users = await readRows(tabs.users);
+  const user = userId === 'env_admin'
+    ? { id: 'env_admin', username: config.adminUsername, role: 'Admin', source: 'env' }
+    : users.find((row) => row.id === userId);
+  if (!user) return null;
+  const [auditRows, uploadRows, exportRows, printRows, sessions] = await Promise.all([
+    readRows(tabs.audit),
+    readRows(tabs.uploads),
+    readRows(tabs.exports),
+    readRows(tabs.printLogs),
+    getUserSessions(userId)
+  ]);
+  const username = String(user.username || '').toLowerCase();
+  const activity = auditRows
+    .filter((row) => String(row.actor || '').toLowerCase() === username || row.entityId === userId)
+    .reverse();
+  return {
+    user: publicUser(user),
+    activity,
+    uploads: uploadRows.filter((row) => String(row.uploadedBy || '').toLowerCase() === username).reverse(),
+    exports: exportRows.filter((row) => String(row.requestedBy || '').toLowerCase() === username).reverse(),
+    prints: printRows.filter((row) => String(row.userId || '').toLowerCase() === username).reverse(),
+    sessions: sessions || []
+  };
+}
+
 export async function unlockUser(userId) {
   const updated = await updateRowById(tabs.users, userId, { failedLoginCount: 0, lockedUntil: '', updatedAt: nowIso() });
   return updated ? publicUser(updated) : null;

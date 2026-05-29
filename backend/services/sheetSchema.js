@@ -71,7 +71,13 @@ export const sheetHeaders = {
     'address',
     'city',
     'postalCode',
-    'uploadedBy'
+    'uploadedBy',
+    'driver',
+    'routingSequence',
+    'deliveryAddress',
+    'fullAddress',
+    'originalRow',
+    'printerName'
   ],
   [tabs.fulfilmentReports]: [
     'id',

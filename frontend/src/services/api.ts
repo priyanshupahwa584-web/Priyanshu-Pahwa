@@ -108,7 +108,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       if (response.status === 401) notifyUnauthorized(path);
-      const message = response.status >= 500 ? 'Server unavailable, please try again later.' : payload.message || 'Request failed.';
+      const safeServerMessage = typeof payload.message === 'string' && payload.message.trim()
+        ? payload.message
+        : 'Server unavailable, please try again later.';
+      const message = response.status >= 500 ? safeServerMessage : payload.message || 'Request failed.';
       const error = new Error(message) as ApiError;
       error.status = response.status;
       error.details = payload.details || payload.errors;
@@ -142,7 +145,7 @@ export async function downloadExport(format: 'csv' | 'xlsx' | 'pdf', filters: Re
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(response.status >= 500 ? 'Server unavailable, please try again later.' : payload.message || 'Export failed.');
+    throw new Error(response.status >= 500 ? payload.message || 'Server unavailable, please try again later.' : payload.message || 'Export failed.');
   }
   const blob = await response.blob();
   const fileName = response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] || `broadreach-export.${format}`;
@@ -160,7 +163,7 @@ export async function downloadFromApi(path: string, fallbackFileName: string) {
   const response = await fetch(apiUrl(path), { credentials: 'include', headers: requestHeaders(undefined, false) });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(response.status >= 500 ? 'Server unavailable, please try again later.' : payload.message || 'Download failed.');
+    throw new Error(response.status >= 500 ? payload.message || 'Server unavailable, please try again later.' : payload.message || 'Download failed.');
   }
   const blob = await response.blob();
   const fileName = response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] || fallbackFileName;

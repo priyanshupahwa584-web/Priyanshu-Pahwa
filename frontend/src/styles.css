@@ -286,6 +286,38 @@
     @apply inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.08em] text-slate-700 shadow-sm transition hover:border-slate-800 hover:bg-stone-50 hover:text-slate-950 active:scale-95;
   }
 
+  .metro-dropzone {
+    @apply flex cursor-pointer flex-col gap-3 rounded-2xl border border-dashed border-stone-300 bg-gradient-to-br from-white to-stone-50 p-4 shadow-sm transition hover:border-slate-700 hover:shadow-[0_18px_42px_rgba(46,38,26,0.09)] sm:flex-row sm:items-center;
+  }
+
+  .metro-label-preview {
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+
+  .metro-label-cell {
+    @apply min-w-0 p-2;
+  }
+
+  .metro-label-title {
+    @apply text-base font-black sm:text-lg;
+  }
+
+  .metro-label-value {
+    @apply truncate text-lg font-black sm:text-xl;
+  }
+
+  .metro-label-large {
+    @apply text-xl font-black sm:text-3xl;
+  }
+
+  .metro-label-xl {
+    @apply text-2xl font-black sm:text-4xl;
+  }
+
+  .metro-label-address {
+    @apply break-words text-sm sm:text-lg;
+  }
+
   .fullscreen-backdrop {
     @apply fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 p-0 backdrop-blur-md sm:p-5;
   }

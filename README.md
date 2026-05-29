@@ -33,7 +33,7 @@ The app can initialize these tabs from Settings after credentials are configured
 
 Columns:
 
-`id, trackingNumber, barcodeValue, customerName, service, route, status, uploadedFileId, printedAt, printedBy, reprintCount, errorMessage, createdAt, updatedAt, address, city, postalCode, uploadedBy`
+`id, trackingNumber, barcodeValue, customerName, service, route, status, uploadedFileId, printedAt, printedBy, reprintCount, errorMessage, createdAt, updatedAt, address, city, postalCode, uploadedBy, driver, routingSequence, deliveryAddress, fullAddress, originalRow, printerName`
 
 ### FulfilmentReports
 
@@ -125,6 +125,19 @@ VITE_API_URL=<your-local-backend-url>
 - `GET /api/users`
 - `POST /api/users`
 - `PUT /api/users/:id`
+- `PATCH /api/users/:id`
+- `POST /api/users/:id/reset-password`
+- `POST /api/users/:id/reset-2fa`
+- `POST /api/users/:id/unlock`
+- `POST /api/users/:id/logout-all`
+- `GET /api/users/:id/activity`
+- `GET /api/users/:id/sessions`
+- `GET /api/metro-labeling`
+- `POST /api/metro-labeling/upload`
+- `POST /api/metro-labeling/print`
+- `POST /api/metro-labeling/reprint`
+- `PATCH /api/metro-labeling/:id`
+- `GET /api/metro-labeling/history`
 - `GET /api/logs/audit`
 - `GET /api/health`
 
@@ -163,7 +176,7 @@ Each export includes filters, row count, user, and timestamp metadata. Exported 
 
 ## Metro Labeling
 
-Metro Labeling accepts `.csv`, `.xlsx`, `.xlsm`, and `.json` files. The import reads real table fields such as Tracking Number, Customer Name, Service, Route, Address, City, and Postal Code, normalizes them into the `MetroLabeling` tab, and uploads the original file to a `Labels` folder in Google Drive.
+Metro Labeling accepts `.csv`, `.xlsx`, `.xlsm`, and `.json` files. The import reads real Metro table fields such as Tracking Number, Driver, Routing Sequence, Delivery Address, City, and Postal Code, normalizes them into the `MetroLabeling` tab, and uploads the original file to a `Labels` folder in Google Drive.
 
 Supported actions:
 

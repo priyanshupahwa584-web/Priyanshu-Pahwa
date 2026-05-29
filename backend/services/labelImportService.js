@@ -17,6 +17,16 @@ function value(map, keys, fallback = '') {
   return fallback;
 }
 
+function isEmptyRow(row) {
+  return !Object.values(row || {}).some((current) => String(current ?? '').trim() !== '');
+}
+
+function titleCaseCity(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text.toLowerCase().replace(/\b[a-z]/g, (char) => char.toUpperCase());
+}
+
 function normalizeMetroRow(row, uploadedFileId, timestamp, uploadedBy = '') {
   const map = keyMap(row);
   const trackingNumber = value(map, [
@@ -27,13 +37,16 @@ function normalizeMetroRow(row, uploadedFileId, timestamp, uploadedBy = '') {
     'barcodevalue',
     'packagetrackingnumber'
   ]);
-  const route = value(map, ['route', 'routingsequence', 'routingseq', 'stop', 'stopnumber', 'sequence']);
+  const routingSequence = value(map, ['routingsequence', 'routingseq', 'sequence', 'route', 'stop', 'stopnumber']);
+  const route = routingSequence;
   const driver = value(map, ['driver', 'drivername']);
-  const address = value(map, ['deliveryaddress', 'address', 'customeraddress']);
-  const city = value(map, ['city']);
+  const deliveryAddress = value(map, ['deliveryaddress', 'address', 'customeraddress']);
+  const address = deliveryAddress;
+  const city = titleCaseCity(value(map, ['city']));
   const postal = value(map, ['postalcode', 'postcode', 'zip']);
-  const customerName = value(map, ['customername', 'customer', 'name', 'recipient', 'consignee'], address || driver);
-  const service = value(map, ['service', 'servicetype', 'carrier'], [city, postal].filter(Boolean).join(' '));
+  const fullAddress = [deliveryAddress, city, postal].filter(Boolean).join(', ');
+  const customerName = value(map, ['customername', 'customer', 'name', 'recipient', 'consignee'], driver);
+  const service = value(map, ['service', 'servicetype', 'carrier'], '');
   return {
     id: id('metro'),
     trackingNumber,
@@ -52,7 +65,13 @@ function normalizeMetroRow(row, uploadedFileId, timestamp, uploadedBy = '') {
     reprintCount: 0,
     errorMessage: '',
     createdAt: timestamp,
-    updatedAt: timestamp
+    updatedAt: timestamp,
+    driver,
+    routingSequence,
+    deliveryAddress,
+    fullAddress,
+    originalRow: JSON.stringify(row || {}),
+    printerName: ''
   };
 }
 
@@ -62,15 +81,11 @@ export async function parseMetroLabelFile(filePath, originalName, uploadedFileId
   const rows = [];
   const errors = [];
   rawRows.forEach((row, index) => {
+    if (isEmptyRow(row)) return;
     const record = normalizeMetroRow(row, uploadedFileId, timestamp, uploadedBy);
     const required = [
       ['trackingNumber', 'Tracking Number'],
-      ['customerName', 'Customer Name'],
-      ['service', 'Service'],
-      ['route', 'Route'],
-      ['address', 'Address'],
-      ['city', 'City'],
-      ['postalCode', 'Postal Code']
+      ['deliveryAddress', 'Delivery Address']
     ];
     const missing = required.filter(([key]) => !record[key]).map(([, label]) => label);
     if (missing.length) {
@@ -79,5 +94,11 @@ export async function parseMetroLabelFile(filePath, originalName, uploadedFileId
     }
     rows.push(record);
   });
-  return { rows, errors };
+  return {
+    rows,
+    errors,
+    importedCount: rows.length,
+    skippedCount: rawRows.length - rows.length - errors.length,
+    rejectedCount: errors.length
+  };
 }

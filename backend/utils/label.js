@@ -1,5 +1,4 @@
 import PDFDocument from 'pdfkit';
-import bwipjs from 'bwip-js';
 
 function clean(value, fallback = '') {
   return String(value ?? fallback).replace(/\s+/g, ' ').trim();
@@ -16,25 +15,35 @@ function truncate(value, max) {
 
 export function normalizeLabelPayload(label = {}) {
   const trackingNumber = clean(label.trackingNumber || label.barcodeValue || 'TEST-TRACKING');
+  const driver = clean(label.driver || label.customerName || label.customer || '');
+  const routingSequence = clean(label.routingSequence || label.route || label.stop || '');
+  const deliveryAddress = clean(label.deliveryAddress || label.address || '');
+  const city = clean(label.city || '');
+  const postalCode = clean(label.postalCode || label.postal || label.postcode || label.zip || '');
   return {
     trackingNumber,
     barcodeValue: clean(label.barcodeValue || trackingNumber),
-    customerName: clean(label.customerName || label.customer || label.driver || ''),
+    customerName: driver,
     service: clean(label.service || label.city || ''),
-    route: clean(label.route || label.routingSequence || label.stop || ''),
-    address: clean(label.address || label.deliveryAddress || ''),
-    city: clean(label.city || ''),
-    postalCode: clean(label.postalCode || label.postal || label.postcode || label.zip || ''),
+    route: routingSequence,
+    driver,
+    routingSequence,
+    address: deliveryAddress,
+    deliveryAddress,
+    city,
+    postalCode,
+    fullAddress: clean(label.fullAddress || [deliveryAddress, city, postalCode].filter(Boolean).join(', ')),
     status: clean(label.status || 'Pending')
   };
 }
 
 export function buildZplLabel(label = {}) {
   const row = normalizeLabelPayload(label);
-  const customer = truncate(row.customerName, 34);
-  const service = truncate(row.service, 28);
-  const route = truncate(row.route, 20);
-  const address = truncate([row.address, row.city, row.postalCode].filter(Boolean).join(', ') || row.service, 36);
+  const driver = truncate(row.driver, 34);
+  const route = truncate(row.routingSequence, 20);
+  const address = truncate(row.deliveryAddress, 38);
+  const city = truncate(row.city, 30);
+  const postalCode = truncate(row.postalCode, 18);
   return [
     '^XA',
     '^PW812',
@@ -48,29 +57,20 @@ export function buildZplLabel(label = {}) {
     '^FO306,22^GB0,218,2^FS',
     '^FO44,42^A0N,36,32^FDTracking No.^FS',
     `^FO326,34^A0N,42,38^FD${zplText(row.trackingNumber)}^FS`,
-    '^FO76,112^A0N,38,34^FDDriver / Customer:^FS',
-    `^FO326,104^A0N,44,40^FD${zplText(customer || 'N/A')}^FS`,
+    '^FO76,112^A0N,38,34^FDDriver:^FS',
+    `^FO326,104^A0N,44,40^FD${zplText(driver || 'N/A')}^FS`,
     '^FO72,186^A0N,38,34^FDRouting Seq:^FS',
     `^FO326,178^A0N,52,46^FD${zplText(route || 'N/A')}^FS`,
-    '^FO74,258^A0N,34,30^FDService / Address:^FS',
-    `^FO326,248^A0N,24,22^FD${zplText(service || 'N/A')}^FS`,
-    `^FO326,276^A0N,24,22^FD${zplText(address || 'N/A')}^FS`,
-    `^FO92,312^BCN,62,Y,N,N^FD${zplText(row.barcodeValue)}^FS`,
+    '^FO74,286^A0N,36,32^FDAddress:^FS',
+    `^FO326,252^A0N,32,29^FD${zplText(address || 'N/A')}^FS`,
+    `^FO326,292^A0N,32,29^FD${zplText(city || '')}^FS`,
+    `^FO326,332^A0N,32,29^FD${zplText(postalCode || '')}^FS`,
     '^XZ'
   ].join('\n');
 }
 
 export async function buildPdfLabel(label = {}) {
   const row = normalizeLabelPayload(label);
-  const barcodeBuffer = await bwipjs.toBuffer({
-    bcid: 'code128',
-    text: row.barcodeValue,
-    scale: 2,
-    height: 8,
-    includetext: false,
-    paddingwidth: 0,
-    paddingheight: 0
-  });
   return new Promise((resolve) => {
     const doc = new PDFDocument({ size: [288, 144], margin: 8 });
     const chunks = [];
@@ -82,20 +82,18 @@ export async function buildPdfLabel(label = {}) {
     doc.moveTo(8, 34).lineTo(280, 34).stroke();
     doc.moveTo(8, 62).lineTo(280, 62).stroke();
     doc.moveTo(8, 86).lineTo(280, 86).stroke();
-    doc.moveTo(8, 112).lineTo(280, 112).stroke();
-    doc.moveTo(100, 8).lineTo(100, 112).stroke();
+    doc.moveTo(100, 8).lineTo(100, 136).stroke();
 
     doc.fillColor('#1f2937').font('Helvetica-Bold').fontSize(12).text('Tracking No.', 14, 16, { width: 82 });
     doc.fontSize(14).text(row.trackingNumber, 106, 14, { width: 164 });
     doc.fontSize(12).text('Driver:', 28, 44, { width: 66 });
-    doc.fontSize(16).text(row.customerName || 'N/A', 106, 40, { width: 164, align: 'center' });
+    doc.fontSize(16).text(row.driver || 'N/A', 106, 40, { width: 164, align: 'center' });
     doc.fontSize(12).text('Routing Seq:', 20, 70, { width: 76 });
-    doc.fontSize(19).text(row.route || 'N/A', 106, 66, { width: 164, align: 'center' });
-    doc.fontSize(10).text('Service / Address:', 16, 94, { width: 86 });
-    doc.fontSize(9).text(row.service || 'N/A', 106, 91, { width: 164, align: 'center' });
-    doc.fontSize(8).text([row.address, row.city, row.postalCode].filter(Boolean).join(', ') || 'N/A', 106, 103, { width: 164, align: 'center' });
-    doc.image(barcodeBuffer, 74, 116, { width: 140, height: 16 });
-    doc.font('Helvetica-Bold').fontSize(7).text(row.barcodeValue, 216, 119, { width: 58, align: 'center' });
+    doc.fontSize(19).text(row.routingSequence || 'N/A', 106, 66, { width: 164, align: 'center' });
+    doc.fontSize(12).text('Address:', 24, 106, { width: 70 });
+    doc.fontSize(10).text(row.deliveryAddress || 'N/A', 106, 94, { width: 164, align: 'center' });
+    doc.fontSize(10).text(row.city || '', 106, 107, { width: 164, align: 'center' });
+    doc.fontSize(10).text(row.postalCode || '', 106, 120, { width: 164, align: 'center' });
     doc.end();
   });
 }

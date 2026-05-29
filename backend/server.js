@@ -55,6 +55,7 @@ app.use('/api/imports', importsRouter);
 app.use('/api/exports', exportsRouter);
 app.use('/api/reports/export', exportsRouter);
 app.use('/api/labels', labelsRouter);
+app.use('/api/metro-labeling', labelsRouter);
 app.use('/api/fulfilment', fulfilmentRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/logs', logsRouter);

@@ -1,7 +1,7 @@
 import express from 'express';
 import { authRequired, requireAccess, requireAdmin } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
-import { createUser, getUserSessions, listUsers, resetUserTwoFactor, revokeUserSessions, unlockUser, updateUser } from '../services/authService.js';
+import { createUser, getUserSessions, listUsers, resetUserPassword, resetUserTwoFactor, revokeUserSessions, unlockUser, updateUser, userActivity } from '../services/authService.js';
 import { roles, sections } from '../services/sheetSchema.js';
 import { userCreateSchema, userUpdateSchema } from '../utils/validation.js';
 
@@ -26,7 +26,7 @@ usersRouter.post('/', authRequired, requireAdmin, async (req, res, next) => {
   }
 });
 
-usersRouter.put('/:id', authRequired, requireAdmin, async (req, res, next) => {
+async function updateUserRoute(req, res, next) {
   try {
     const body = userUpdateSchema.parse(req.body);
     const user = await updateUser(req.params.id, body);
@@ -39,6 +39,22 @@ usersRouter.put('/:id', authRequired, requireAdmin, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+}
+
+usersRouter.put('/:id', authRequired, requireAdmin, updateUserRoute);
+usersRouter.patch('/:id', authRequired, requireAdmin, updateUserRoute);
+
+usersRouter.post('/:id/reset-password', authRequired, requireAdmin, async (req, res, next) => {
+  try {
+    const password = String(req.body?.temporaryPassword || req.body?.password || '');
+    if (password.length < 4) return res.status(400).json({ message: 'Temporary password must be at least 4 characters.' });
+    const user = await resetUserPassword(req.params.id, password, { forcePasswordChange: req.body?.forcePasswordChange !== false });
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    await audit({ actor: req.user.username, action: 'password_reset', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '' });
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
 });
 
 usersRouter.get('/:id/sessions', authRequired, requireAdmin, async (req, res, next) => {
@@ -46,6 +62,16 @@ usersRouter.get('/:id/sessions', authRequired, requireAdmin, async (req, res, ne
     const sessions = await getUserSessions(req.params.id);
     if (!sessions) return res.status(404).json({ message: 'User not found.' });
     res.json({ sessions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.get('/:id/activity', authRequired, requireAdmin, async (req, res, next) => {
+  try {
+    const result = await userActivity(req.params.id);
+    if (!result) return res.status(404).json({ message: 'User not found.' });
+    res.json(result);
   } catch (error) {
     next(error);
   }
@@ -74,6 +100,16 @@ usersRouter.post('/:id/reset-2fa', authRequired, requireAdmin, async (req, res, 
 });
 
 usersRouter.post('/:id/revoke-sessions', authRequired, requireAdmin, async (req, res, next) => {
+  try {
+    const revoked = await revokeUserSessions(req.params.id, req.user.username);
+    await audit({ actor: req.user.username, action: 'user_sessions_revoked', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '', metadata: { revoked } });
+    res.json({ ok: true, revoked });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.post('/:id/logout-all', authRequired, requireAdmin, async (req, res, next) => {
   try {
     const revoked = await revokeUserSessions(req.params.id, req.user.username);
     await audit({ actor: req.user.username, action: 'user_sessions_revoked', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '', metadata: { revoked } });

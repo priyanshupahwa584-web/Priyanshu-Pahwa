@@ -43,8 +43,16 @@ export function enforceHttpsInProduction(req, res, next) {
 export function errorHandler(error, _req, res, _next) {
   if (error?.statusCode) return res.status(error.statusCode).json({ message: error.message });
   if (error?.name === 'ZodError') return res.status(400).json({ message: 'Please check the form fields.', details: error.issues });
+  if (error?.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ message: 'Upload file is too large.' });
   if (error?.type === 'entity.parse.failed') return res.status(400).json({ message: 'Request body was not valid JSON.' });
   if (String(error.message || '').includes('CORS')) return res.status(403).json({ message: 'Request origin is not allowed.' });
+  const upstreamStatus = Number(error?.code || error?.response?.status || 0);
+  if (upstreamStatus === 401 || upstreamStatus === 403) {
+    return res.status(503).json({ message: 'Platform storage permission is blocked. Admin can check system access.' });
+  }
+  if (upstreamStatus === 404) {
+    return res.status(503).json({ message: 'Platform storage is not initialized. Admin can initialize system tabs.' });
+  }
   console.error(error);
   return res.status(500).json({ message: 'Server unavailable, please try again later.' });
 }

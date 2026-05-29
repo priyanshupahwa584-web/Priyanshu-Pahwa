@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, DragEvent, KeyboardEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, clearAccessToken, downloadExport, downloadFromApi, postJson, putJson, storeAccessToken } from './services/api';
@@ -1171,22 +1171,57 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [status, setStatus] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [preview, setPreview] = useState<MetroLabelRow | null>(null);
+  const [uploadSummary, setUploadSummary] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const printerName = getDefaultPrinter();
   const canUpload = ['Admin', 'Manager', 'Supervisor'].includes(user.role);
   const query = useMemo(() => new URLSearchParams(Object.entries({ search, status }).filter(([, value]) => value)).toString(), [search, status]);
+  const metroStats = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      uploaded: rows.length,
+      pending: rows.filter((row) => !['Printed', 'Reprinted', 'Error'].includes(row.status)).length,
+      printedToday: rows.filter((row) => ['Printed', 'Reprinted'].includes(row.status) && String(row.printedAt || '').startsWith(today)).length,
+      errors: rows.filter((row) => row.status === 'Error').length
+    };
+  }, [rows]);
 
   const load = async () => {
     const [response, logs] = await Promise.all([
-      api<{ rows: MetroLabelRow[] }>(`/labels?${query}`),
-      api<{ rows: any[] }>('/labels/logs').catch(() => ({ rows: [] }))
+      api<{ rows: MetroLabelRow[] }>(`/metro-labeling?${query}`),
+      api<{ rows: any[] }>('/metro-labeling/history').catch(() => ({ rows: [] }))
     ]);
-    setRows(response.rows);
+    const normalizedRows = (response.rows || []).map((row) => ({
+      ...row,
+      driver: row.driver || row.customerName || '',
+      routingSequence: row.routingSequence || row.route || '',
+      deliveryAddress: row.deliveryAddress || row.address || '',
+      fullAddress: row.fullAddress || [row.deliveryAddress || row.address, row.city, row.postalCode].filter(Boolean).join(', ')
+    }));
+    setRows(normalizedRows);
     setPrintLogs(logs.rows || []);
-    setPreview((current) => current || response.rows[0] || null);
+    setPreview((current) => current || normalizedRows[0] || null);
   };
 
   useEffect(() => { load().catch((error) => showNotice('error', error.message)); }, []);
+  useEffect(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return;
+    const match = rows.find((row) => [row.trackingNumber, row.barcodeValue].some((value) => String(value || '').toLowerCase() === term));
+    if (match) setPreview(match);
+  }, [search, rows]);
+
+  const selectMetroFile = (nextFile?: File | null) => {
+    if (!nextFile) return;
+    setFile(nextFile);
+    setUploadSummary(null);
+  };
+
+  const dropFile = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    selectMetroFile(event.dataTransfer.files?.[0] || null);
+  };
 
   const upload = async () => {
     if (!file) return showNotice('error', 'Choose a Metro label CSV, XLSX, XLSM, or JSON file first.');
@@ -1194,10 +1229,13 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     form.append('file', file);
     setBusy(true);
     try {
-      const response = await api<{ importedRows: number }>('/labels/upload', { method: 'POST', body: form });
+      const response = await api<{ importedRows: number; skippedRows: number; rejectedRows: number; errors?: any[]; uploadedBy?: string; uploadedAt?: string; rows?: MetroLabelRow[] }>('/metro-labeling/upload', { method: 'POST', body: form });
+      setUploadSummary(response);
       showNotice('success', `${response.importedRows} Metro label rows imported.`);
       setSelected([]);
       setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (response.rows?.[0]) setPreview(response.rows[0]);
       await load();
     } catch (error: any) {
       showNotice('error', error.message);
@@ -1208,20 +1246,20 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
 
   const printRow = async (row: MetroLabelRow, action: 'print' | 'reprint' = 'print') => {
     if (!printerName) {
-      showNotice('error', 'Select a default printer in Printer Setup first.');
+      showNotice('info', 'Print agent not connected. Preview is ready.');
       return;
     }
     setBusy(true);
     try {
       await checkAgent();
-      const prepared = await postJson<any>('/labels/print', { id: row.id, printerName, type: 'zpl', action, prepareOnly: true });
+      const prepared = await postJson<any>(action === 'reprint' ? '/metro-labeling/reprint' : '/metro-labeling/print', { id: row.id, printerName, type: 'zpl', action, prepareOnly: true });
       await sendPrintJob(prepared.localAgentJob);
-      await postJson('/labels/print/confirm', { id: row.id, printerName, type: 'zpl', action });
+      await postJson('/metro-labeling/print/confirm', { id: row.id, printerName, type: 'zpl', action });
       showNotice('success', `${row.trackingNumber} sent to ${printerName}.`);
       await load();
     } catch (error: any) {
-      await postJson('/labels/print/confirm', { id: row.id, printerName, type: 'zpl', action, errorMessage: error.message }).catch(() => null);
-      showNotice('error', error.message);
+      await postJson('/metro-labeling/print/confirm', { id: row.id, printerName, type: 'zpl', action, errorMessage: error.message }).catch(() => null);
+      showNotice('error', /agent|fetch|network/i.test(error.message) ? 'Print agent not connected. Preview is ready.' : error.message);
       await load().catch(() => null);
     } finally {
       setBusy(false);
@@ -1244,6 +1282,12 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
         subtitle="Upload, search, preview, and print Metro labels."
         action={<button className="button" onClick={() => load().catch((error) => showNotice('error', error.message))}>Refresh</button>}
       />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="Uploaded Labels" value={number(metroStats.uploaded)} helper="Current queue" icon="label" />
+        <Kpi label="Pending Print" value={number(metroStats.pending)} helper="Ready to print" tone="amber" icon="printer" />
+        <Kpi label="Printed Today" value={number(metroStats.printedToday)} helper="Printed or reprinted" tone="teal" icon="activity" />
+        <Kpi label="Errors" value={number(metroStats.errors)} helper="Needs attention" tone={metroStats.errors ? 'red' : 'slate'} icon="report" />
+      </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
         <div className="card p-4 sm:p-5">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -1254,14 +1298,52 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
             <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-slate-600">{rows.length} rows</span>
           </div>
           {canUpload && (
-            <div className="mt-4 flex flex-col gap-3 md:flex-row">
-              <input className="input" type="file" accept=".csv,.xlsx,.xlsm,.json" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-              <button className="button button-primary whitespace-nowrap" disabled={busy} onClick={upload}>{busy ? 'Working...' : 'Upload Label File'}</button>
+            <div className="mt-4 grid gap-3">
+              <input ref={fileInputRef} className="sr-only" type="file" accept=".csv,.xlsx,.xlsm,.json" onChange={(event) => selectMetroFile(event.target.files?.[0] || null)} />
+              <div
+                className="metro-dropzone"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={dropFile}
+                role="button"
+                tabIndex={0}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') fileInputRef.current?.click();
+                }}
+              >
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-950 text-white"><NavIcon name="import" /></div>
+                <div className="min-w-0">
+                  <div className="font-black text-slate-950">Drop Metro route file here or select file</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-500">CSV, XLSX, XLSM, or JSON</div>
+                </div>
+                <button type="button" className="button button-subtle shrink-0" onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click(); }}>Select Metro File</button>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm font-bold text-slate-700">
+                  {file ? <span className="truncate">{file.name}</span> : 'No file selected'}
+                </div>
+                <button className="button button-primary whitespace-nowrap" disabled={busy || !file} onClick={upload}>{busy ? 'Importing...' : 'Import Labels'}</button>
+              </div>
+            </div>
+          )}
+          {uploadSummary && (
+            <div className="mt-4 rounded-xl border border-stone-200 bg-white p-3 text-sm shadow-sm">
+              <div className="grid gap-2 sm:grid-cols-4">
+                <MiniStatus label="Imported" value={String(uploadSummary.importedRows ?? 0)} />
+                <MiniStatus label="Skipped" value={String(uploadSummary.skippedRows ?? 0)} />
+                <MiniStatus label="Rejected" value={String(uploadSummary.rejectedRows ?? 0)} />
+                <MiniStatus label="Uploaded By" value={uploadSummary.uploadedBy || user.username} />
+              </div>
+              {uploadSummary.errors?.length ? (
+                <div className="mt-3 rounded-lg bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+                  {uploadSummary.errors.slice(0, 4).map((error: any) => <div key={`${error.row}-${error.message}`}>Row {error.row}: {error.message}</div>)}
+                </div>
+              ) : null}
             </div>
           )}
           <div className="mt-4 grid gap-2 text-xs font-bold text-slate-500 sm:grid-cols-3">
             <span className="rounded-xl bg-slate-50 px-3 py-2">Tracking Number</span>
-            <span className="rounded-xl bg-slate-50 px-3 py-2">Customer / Route</span>
+            <span className="rounded-xl bg-slate-50 px-3 py-2">Driver / Routing Sequence</span>
             <span className="rounded-xl bg-slate-50 px-3 py-2">Address / Postal Code</span>
           </div>
         </div>
@@ -1278,7 +1360,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       <DataTable
         title="Metro Labels"
         rows={rows}
-        columns={['trackingNumber', 'customerName', 'service', 'route', 'address', 'city', 'postalCode', 'status', 'uploadedBy', 'printedBy', 'printedAt']}
+        columns={['trackingNumber', 'driver', 'routingSequence', 'deliveryAddress', 'city', 'postalCode', 'status', 'uploadedBy', 'printedBy', 'printedAt', 'printerName', 'reprintCount', 'errorMessage']}
         emptyText="Upload a file to begin."
         select={{ selected, onChange: setSelected }}
         onRowClick={(row) => setPreview(row)}
@@ -1575,9 +1657,35 @@ function UsersPage({ currentUser, showNotice }: { currentUser: User; showNotice:
     twoFactorRequired: false,
     permissions: ['dashboard', 'metro-labeling', 'security']
   });
-  const [sessionPanel, setSessionPanel] = useState<{ user: any; sessions: any[] } | null>(null);
+  const [activityPanel, setActivityPanel] = useState<any>(null);
+  const [activityFilters, setActivityFilters] = useState({ username: '', role: '', action: '', from: '', to: '', device: '', ip: '' });
   const isAdmin = currentUser.role === 'Admin';
   const roleOptions = data.roles?.length ? data.roles : ['Admin', 'Manager', 'Supervisor', 'Operator', 'Viewer'];
+  const userStats = useMemo(() => ({
+    total: data.users.length,
+    active: data.users.filter((item: any) => item.active).length,
+    locked: data.users.filter((item: any) => item.lockedUntil).length,
+    twoFactor: data.users.filter((item: any) => item.twoFactorEnabled).length
+  }), [data.users]);
+  const filteredUserActivity = useMemo(() => {
+    const rows = activityPanel?.activity || [];
+    return rows.filter((row: any) => {
+      const actor = String(row.actor || '').toLowerCase();
+      const role = String(activityPanel?.user?.role || '').toLowerCase();
+      const action = String(row.action || '').toLowerCase();
+      const device = String(row.device || '').toLowerCase();
+      const ip = String(row.ip || '').toLowerCase();
+      const createdAt = String(row.createdAt || '');
+      const ipDevice = (activityFilters.ip || activityFilters.device).toLowerCase();
+      if (activityFilters.username && !actor.includes(activityFilters.username.toLowerCase())) return false;
+      if (activityFilters.role && role !== activityFilters.role.toLowerCase()) return false;
+      if (activityFilters.action && !action.includes(activityFilters.action.toLowerCase())) return false;
+      if (ipDevice && !device.includes(ipDevice) && !ip.includes(ipDevice)) return false;
+      if (activityFilters.from && createdAt < activityFilters.from) return false;
+      if (activityFilters.to && createdAt > activityFilters.to) return false;
+      return true;
+    });
+  }, [activityPanel, activityFilters]);
   const load = async () => setData(await api('/users'));
   useEffect(() => { load().catch((error) => showNotice('error', error.message)); }, []);
   const create = async () => {
@@ -1604,7 +1712,7 @@ function UsersPage({ currentUser, showNotice }: { currentUser: User; showNotice:
   };
   const save = async (user: any) => {
     try {
-      await putJson(`/users/${user.id}`, user);
+      await api(`/users/${user.id}`, { method: 'PATCH', body: JSON.stringify(user) });
       showNotice('success', 'User updated.');
       load();
     } catch (error: any) {
@@ -1620,17 +1728,26 @@ function UsersPage({ currentUser, showNotice }: { currentUser: User; showNotice:
       showNotice('error', error.message);
     }
   };
-  const viewSessions = async (row: any) => {
+  const viewActivity = async (row: any) => {
     try {
-      const response = await api<{ sessions: any[] }>(`/users/${row.id}/sessions`);
-      setSessionPanel({ user: row, sessions: response.sessions || [] });
+      setActivityPanel(await api(`/users/${row.id}/activity`));
     } catch (error: any) {
       showNotice('error', error.message);
     }
   };
   return (
     <PageStack>
-      <PageHeader title="Users" subtitle="Manage team access and roles." />
+      <PageHeader
+        title="Users"
+        subtitle="Manage team access and roles."
+        action={isAdmin ? <button className="button button-primary" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Create User</button> : undefined}
+      />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="Total Users" value={number(userStats.total)} icon="users" />
+        <Kpi label="Active Users" value={number(userStats.active)} tone="teal" icon="activity" />
+        <Kpi label="Locked Users" value={number(userStats.locked)} tone={userStats.locked ? 'red' : 'slate'} icon="settings" />
+        <Kpi label="2FA Enabled" value={number(userStats.twoFactor)} tone="amber" icon="settings" />
+      </div>
       {isAdmin ? (
         <FormCard title="Create User">
           <FormGrid cols="grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
@@ -1670,21 +1787,40 @@ function UsersPage({ currentUser, showNotice }: { currentUser: User; showNotice:
           emptyText="No users found."
           actions={(row) => (
             <div className="flex flex-wrap gap-2">
-              <button className="button button-subtle" onClick={() => viewSessions(row)}>Sessions</button>
+              <button className="button button-subtle" onClick={() => viewActivity(row)}>View Activity</button>
               <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/unlock`, 'User unlocked.')}>Unlock</button>
               <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/reset-2fa`, 'Two-factor setup reset.')}>Reset 2FA</button>
-              <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/revoke-sessions`, 'User sessions revoked.')}>Logout Devices</button>
+              <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/logout-all`, 'User sessions revoked.')}>Logout Devices</button>
             </div>
           )}
         />
       )}
-      {sessionPanel && (
-        <DataTable
-          title={`Sessions: ${sessionPanel.user.displayName || sessionPanel.user.username}`}
-          rows={sessionPanel.sessions}
-          columns={['device', 'ip', 'createdAt', 'lastSeenAt', 'expiresAt', 'revokedAt']}
-          emptyText="No sessions recorded."
-        />
+      {activityPanel && (
+        <div className="grid gap-4">
+          <Panel title={`User Details: ${activityPanel.user?.displayName || activityPanel.user?.username}`}>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <MiniStatus label="Username" value={activityPanel.user?.username || '-'} />
+              <MiniStatus label="Role" value={activityPanel.user?.role || '-'} />
+              <MiniStatus label="Status" value={activityPanel.user?.active ? 'Active' : 'Disabled'} />
+              <MiniStatus label="2FA" value={activityPanel.user?.twoFactorEnabled ? 'Enabled' : 'Not enabled'} />
+            </div>
+          </Panel>
+          <div className="card p-4 sm:p-5">
+            <h3 className="mb-4 font-bold text-slate-950">Admin User Activity</h3>
+            <FormGrid cols="grid-cols-1 sm:grid-cols-2 xl:grid-cols-6">
+              <TextInput label="Username" value={activityFilters.username} onChange={(username) => setActivityFilters({ ...activityFilters, username })} />
+              <SelectInput label="Role" value={activityFilters.role} options={['', ...roleOptions]} onChange={(role) => setActivityFilters({ ...activityFilters, role })} />
+              <TextInput label="Action" value={activityFilters.action} onChange={(action) => setActivityFilters({ ...activityFilters, action })} />
+              <TextInput label="From" value={activityFilters.from} onChange={(from) => setActivityFilters({ ...activityFilters, from })} />
+              <TextInput label="To" value={activityFilters.to} onChange={(to) => setActivityFilters({ ...activityFilters, to })} />
+              <TextInput label="IP / Device" value={activityFilters.ip || activityFilters.device} onChange={(value) => setActivityFilters({ ...activityFilters, ip: value, device: value })} />
+            </FormGrid>
+          </div>
+          <DataTable title="User Activity" rows={filteredUserActivity} columns={['createdAt', 'actor', 'action', 'entity', 'ip', 'device']} emptyText="No activity recorded yet." />
+          <DataTable title="User Sessions" rows={activityPanel.sessions || []} columns={['device', 'ip', 'createdAt', 'lastSeenAt', 'expiresAt', 'revokedAt']} emptyText="No sessions recorded." />
+          <DataTable title="Metro Print Activity" rows={activityPanel.prints || []} columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'errorMessage']} emptyText="No print activity recorded." />
+          <DataTable title="Uploads and Exports" rows={[...(activityPanel.uploads || []), ...(activityPanel.exports || [])]} columns={['createdAt', 'fileName', 'status', 'format', 'rowCount']} emptyText="No file activity recorded." />
+        </div>
       )}
     </PageStack>
   );
@@ -1700,7 +1836,7 @@ function UserCard({ user, roles, sections, onSave }: { user: any; roles: string[
       <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="font-black text-slate-950">{draft.displayName || draft.username}</h3>
-          <p className="text-sm font-semibold text-slate-500">{draft.role} · {draft.active ? 'Active' : 'Disabled'}</p>
+          <p className="text-sm font-semibold text-slate-500">{draft.role} - {draft.active ? 'Active' : 'Disabled'}</p>
         </div>
         {draft.lockedUntil && <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700">Locked</span>}
       </div>
@@ -1740,7 +1876,7 @@ function ActivityPage() {
       const [uploadRows, exportRows, printRows] = await Promise.all([
         api<{ rows: any[] }>('/logs/uploads'),
         api<{ rows: any[] }>('/logs/exports'),
-        api<{ rows: any[] }>('/labels/logs').catch(() => ({ rows: [] }))
+        api<{ rows: any[] }>('/metro-labeling/history').catch(() => ({ rows: [] }))
       ]);
       setLogs(audit.rows || []);
       setUploads(uploadRows.rows || []);
@@ -1964,8 +2100,8 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
             <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
               <div className="text-sm font-black uppercase tracking-[0.14em] text-amber-700">System Setup</div>
               <p className="mt-2 text-sm font-semibold text-amber-800">Admin use only.</p>
-              <p className="mt-2 text-sm text-amber-800">Use this only when the platform setup needs to be initialized or repaired.</p>
-              <button className="button button-primary mt-4" onClick={initialize}>Initialize Required Setup</button>
+              <p className="mt-2 text-sm text-amber-800">Use this only when Users, sessions, activity, print logs, or Metro storage need to be initialized or repaired.</p>
+              <button className="button button-primary mt-4" onClick={initialize}>Initialize System Tabs</button>
             </div>
           )}
         </Panel>
@@ -1975,29 +2111,36 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
 }
 
 function LabelPreview({ row }: { row: MetroLabelRow | null }) {
-  const addressLine = row ? [row.address, row.city, row.postalCode].filter(Boolean).join(', ') : '';
+  const driver = row?.driver || row?.customerName || '';
+  const routingSequence = row?.routingSequence || row?.route || '';
+  const deliveryAddress = row?.deliveryAddress || row?.address || '';
+  const readyStatus = row && !['Printed', 'Reprinted', 'Error'].includes(row.status) ? 'Ready to print' : row?.status;
   return (
     <div className="card p-4 sm:p-5">
-      <h3 className="mb-4 font-black text-slate-950">4x2 Label Preview</h3>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="font-black text-slate-950">4x2 Label Preview</h3>
+        {readyStatus && <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-slate-700">{readyStatus}</span>}
+      </div>
       {row ? (
-        <div className="mx-auto aspect-[2/1] w-full max-w-[440px] overflow-hidden rounded-lg border-2 border-slate-900 bg-white text-slate-900 shadow-enterprise">
+        <div className="metro-label-preview mx-auto aspect-[2/1] w-full max-w-[520px] overflow-hidden rounded-sm border-2 border-slate-900 bg-white text-slate-900 shadow-enterprise">
           <div className="grid grid-cols-[38%_62%] border-b-2 border-slate-900">
-            <div className="p-2 text-lg font-black">Tracking No.</div>
-            <div className="p-2 text-xl font-black">{row.trackingNumber}</div>
+            <div className="metro-label-cell metro-label-title">Tracking No.</div>
+            <div className="metro-label-cell metro-label-value">{row.trackingNumber}</div>
           </div>
           <div className="grid grid-cols-[38%_62%] border-b border-slate-400">
-            <div className="p-2 text-lg font-black">Customer:</div>
-            <div className="truncate p-2 text-center text-xl font-black">{row.customerName || 'N/A'}</div>
+            <div className="metro-label-cell metro-label-title text-center">Driver:</div>
+            <div className="metro-label-cell metro-label-large truncate text-center">{driver || 'N/A'}</div>
           </div>
           <div className="grid grid-cols-[38%_62%] border-b border-slate-400">
-            <div className="p-2 text-lg font-black">Routing Seq:</div>
-            <div className="p-2 text-center text-2xl font-black">{row.route || 'N/A'}</div>
+            <div className="metro-label-cell metro-label-title">Routing Seq:</div>
+            <div className="metro-label-cell metro-label-xl text-center">{routingSequence || 'N/A'}</div>
           </div>
           <div className="grid grid-cols-[38%_62%]">
-            <div className="p-2 text-lg font-black">Address:</div>
-            <div className="p-2 text-center text-sm font-black leading-tight">
-              <div className="truncate">{row.service || 'N/A'}</div>
-              <div className="truncate">{addressLine || 'N/A'}</div>
+            <div className="metro-label-cell metro-label-title self-center">Address:</div>
+            <div className="metro-label-cell text-center font-black leading-tight">
+              <div className="metro-label-address">{deliveryAddress || 'N/A'}</div>
+              <div className="metro-label-address">{row.city || ''}</div>
+              <div className="metro-label-address">{row.postalCode || ''}</div>
             </div>
           </div>
         </div>

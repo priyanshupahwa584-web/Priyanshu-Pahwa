@@ -88,6 +88,15 @@ try {
   result = await request(baseUrl, '/labels', { headers: { cookie } });
   assert(result.response.status === 503, 'Metro Labeling route should exist and report missing Google config');
 
+  result = await request(baseUrl, '/metro-labeling', { headers: { cookie } });
+  assert(result.response.status === 503, 'Metro Labeling production route should exist and report missing Google config');
+
+  result = await request(baseUrl, '/metro-labeling/history', { headers: { cookie } });
+  assert(result.response.status === 503, 'Metro Labeling history route should exist and report missing Google config');
+
+  result = await request(baseUrl, '/users', { headers: { cookie } });
+  assert(result.response.status === 503, 'Users route should exist and report missing Google config');
+
   result = await request(baseUrl, '/fulfilment/report', { headers: { cookie } });
   assert(result.response.status === 503, 'Fulfilment report route should exist and report missing Google config');
 
