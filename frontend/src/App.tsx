@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent, KeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent, FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, clearAccessToken, downloadExport, downloadFromApi, postJson, putJson, storeAccessToken } from './services/api';
@@ -1163,11 +1163,14 @@ function DashboardSkeleton() {
   );
 }
 
+type MetroScanStatus = 'Ready' | 'Printed' | 'Not Found' | 'Already Printed' | 'Printer Offline';
+
 function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type: NoticeType, text: string) => void }) {
   const [rows, setRows] = useState<MetroLabelRow[]>([]);
   const [printLogs, setPrintLogs] = useState<any[]>([]);
   const [file, setFile] = useState<File | null>(null);
-  const [search, setSearch] = useState('');
+  const [queueFilter, setQueueFilter] = useState('');
+  const [scanValue, setScanValue] = useState('');
   const [status, setStatus] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [preview, setPreview] = useState<MetroLabelRow | null>(null);
@@ -1175,8 +1178,10 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
+  const scanQueueRef = useRef<string[]>([]);
+  const scanProcessingRef = useRef(false);
   const [scanMode, setScanMode] = useState(false);
-  const [scanStatus, setScanStatus] = useState('Ready to scan');
+  const [scanStatus, setScanStatus] = useState<MetroScanStatus>('Ready');
   const [lastScanned, setLastScanned] = useState<{ trackingNumber: string; status: string; at: string } | null>(null);
   const [lastPrinted, setLastPrinted] = useState<{ trackingNumber: string; at: string; printerName: string } | null>(null);
   const [autoPrintOnScan, setAutoPrintOnScan] = useState(true);
@@ -1185,7 +1190,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [confirmBeforeReprint, setConfirmBeforeReprint] = useState(true);
   const printerName = getDefaultPrinter();
   const canUpload = ['Admin', 'Manager', 'Supervisor'].includes(user.role);
-  const query = useMemo(() => new URLSearchParams(Object.entries({ search, status }).filter(([, value]) => value)).toString(), [search, status]);
+  const query = useMemo(() => new URLSearchParams(Object.entries({ search: queueFilter, status }).filter(([, value]) => value)).toString(), [queueFilter, status]);
   const metroStats = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     return {
@@ -1204,11 +1209,15 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     fullAddress: row.fullAddress || [row.deliveryAddress || row.address, row.city, row.postalCode].filter(Boolean).join(', ')
   });
 
+  const trackingKey = (value: unknown) => String(value || '').trim().toLowerCase();
+
   const focusScanInput = () => {
+    if (!scanMode) return;
     window.setTimeout(() => {
-      scanInputRef.current?.focus();
-      scanInputRef.current?.select();
-    }, 60);
+      if (!scanInputRef.current || scanInputRef.current.disabled) return;
+      scanInputRef.current.focus({ preventScroll: true });
+      scanInputRef.current.select();
+    }, 0);
   };
 
   const load = async () => {
@@ -1227,11 +1236,11 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     if (scanMode) focusScanInput();
   }, [scanMode]);
   useEffect(() => {
-    const term = search.trim().toLowerCase();
+    const term = queueFilter.trim().toLowerCase();
     if (!term) return;
     const match = rows.find((row) => [row.trackingNumber, row.barcodeValue].some((value) => String(value || '').toLowerCase() === term));
     if (match) setPreview(match);
-  }, [search, rows]);
+  }, [queueFilter, rows]);
 
   const selectMetroFile = (nextFile?: File | null) => {
     if (!nextFile) return;
@@ -1292,60 +1301,87 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     }
   };
 
-  const handleScan = async () => {
-    const trackingNumber = search.trim();
-    if (!trackingNumber) {
-      setScanStatus('Ready to scan');
-      focusScanInput();
-      return;
-    }
-    setScanStatus(autoPrintOnScan ? 'Printing...' : 'Ready to scan');
+  const markScanNotFound = (trackingNumber: string) => {
+    setScanStatus('Not Found');
+    setLastScanned({ trackingNumber, status: 'Not Found', at: new Date().toISOString() });
+    showNotice('error', 'Tracking not found');
+  };
+
+  const runQueuedScan = async (trackingNumber: string) => {
+    setScanStatus('Ready');
     try {
       const response = await postJson<{ row: MetroLabelRow; scannedAt: string }>('/metro-labeling/scan', { trackingNumber });
       const row = normalizeMetroRow(response.row);
+      if (trackingKey(row.trackingNumber) !== trackingKey(trackingNumber)) {
+        markScanNotFound(trackingNumber);
+        return;
+      }
+
       const alreadyPrinted = ['Printed', 'Reprinted'].includes(row.status);
       setPreview(row);
       setLastScanned({ trackingNumber, status: row.status || 'Found', at: response.scannedAt || new Date().toISOString() });
 
       if (alreadyPrinted && !autoReprint) {
-        setScanStatus('Already printed');
+        setScanStatus('Already Printed');
         showNotice('info', 'Already printed. Use Reprint if another label is needed.');
-        focusScanInput();
         return;
       }
 
       if (alreadyPrinted && autoReprint && confirmBeforeReprint && !window.confirm('This label was already printed. Reprint it now?')) {
-        setScanStatus('Already printed');
-        focusScanInput();
+        setScanStatus('Already Printed');
         return;
       }
 
       if (!autoPrintOnScan) {
-        setScanStatus('Ready to scan');
-        focusScanInput();
+        setScanStatus('Ready');
         return;
       }
 
       const result = await printRow(row, alreadyPrinted ? 'reprint' : 'print');
-      if (result === 'printed') {
-        setScanStatus('Printed');
-        if (autoClearAfterPrint) setSearch('');
-      } else if (result === 'offline') {
-        setScanStatus('Printer offline');
-      } else {
-        setScanStatus('Printer offline');
-      }
+      setScanStatus(result === 'printed' ? 'Printed' : 'Printer Offline');
+      if (result === 'printed' || autoClearAfterPrint) setScanValue('');
     } catch (error: any) {
       if (error.status === 404 || /not found/i.test(error.message)) {
-        setScanStatus('Not found');
-        showNotice('error', 'Tracking not found');
+        markScanNotFound(trackingNumber);
       } else {
-        setScanStatus('Printer offline');
+        setScanStatus('Printer Offline');
         showNotice('error', error.message);
       }
     } finally {
+      setScanValue('');
       focusScanInput();
     }
+  };
+
+  const processScanQueue = async () => {
+    if (scanProcessingRef.current) return;
+    scanProcessingRef.current = true;
+    try {
+      while (scanQueueRef.current.length) {
+        const trackingNumber = scanQueueRef.current.shift();
+        if (trackingNumber) await runQueuedScan(trackingNumber);
+      }
+    } finally {
+      scanProcessingRef.current = false;
+      setScanValue('');
+      focusScanInput();
+    }
+  };
+
+  const submitScan = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    if (!scanMode) return;
+    const trackingNumber = scanValue.trim();
+    setScanValue('');
+    if (!trackingNumber) {
+      setScanStatus('Ready');
+      focusScanInput();
+      return;
+    }
+    scanQueueRef.current.push(trackingNumber);
+    setScanStatus('Ready');
+    void processScanQueue();
+    focusScanInput();
   };
 
   const bulkPrint = async () => {
@@ -1358,11 +1394,9 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   };
   const scanStatusClass = scanStatus === 'Printed'
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-    : scanStatus === 'Printing...'
-      ? 'bg-amber-50 text-amber-800 border-amber-200'
-      : ['Not found', 'Printer offline'].includes(scanStatus)
+    : ['Not Found', 'Printer Offline'].includes(scanStatus)
         ? 'bg-red-50 text-red-700 border-red-200'
-        : scanStatus === 'Already printed'
+        : scanStatus === 'Already Printed'
           ? 'bg-slate-100 text-slate-700 border-slate-200'
           : 'bg-cyan-50 text-broad-teal border-cyan-200';
 
@@ -1387,7 +1421,8 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
                 className={`button ${scanMode ? 'button-primary' : 'button-subtle'}`}
                 onClick={() => {
                   setScanMode((value) => !value);
-                  setScanStatus('Ready to scan');
+                  setScanStatus('Ready');
+                  setScanValue('');
                 }}
               >
                 {scanMode ? 'Scan Mode On' : 'Scan Mode Off'}
@@ -1395,23 +1430,26 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
               <span className={`rounded-full border px-3 py-1 text-xs font-black ${scanStatusClass}`}>{scanStatus}</span>
               <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-slate-600">{metroStats.pending} in print queue</span>
             </div>
-            <label className="label">
-              Scan Tracking / Barcode
+            <form className="label" onSubmit={submitScan}>
+              Scan Tracking Number
               <input
                 ref={scanInputRef}
-                className={`input metro-scan-input ${scanStatus === 'Not found' ? 'metro-scan-error' : ''}`}
-                value={search}
-                placeholder="Scan tracking number and press Enter"
-                onChange={(event) => setSearch(event.target.value)}
+                className={`input metro-scan-input ${scanStatus === 'Not Found' ? 'metro-scan-error' : ''}`}
+                value={scanValue}
+                placeholder={scanMode ? 'Scan tracking number and press Enter' : 'Turn on Scan Mode'}
+                autoComplete="off"
+                inputMode="text"
+                disabled={!scanMode}
+                onChange={(event) => setScanValue(event.target.value)}
                 onFocus={(event) => event.target.select()}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
-                    handleScan();
+                    submitScan();
                   }
                 }}
               />
-            </label>
+            </form>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:w-[420px]">
             <MiniStatus label="Last Scanned" value={lastScanned ? `${lastScanned.trackingNumber} - ${lastScanned.status}` : 'None yet'} />
@@ -1488,7 +1526,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       </div>
       <div className="card p-4 sm:p-5">
         <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto_auto]">
-          <TextInput label="Queue Filter" value={search} onChange={setSearch} />
+          <TextInput label="Queue Filter" value={queueFilter} onChange={setQueueFilter} />
           <SelectInput label="Status" value={status} options={['', 'Uploaded', 'Pending Print', 'Printed', 'Reprinted', 'Error']} onChange={setStatus} />
           <button className="button lg:mt-6" onClick={() => load().catch((error) => showNotice('error', error.message))}>Apply</button>
           <button className="button button-primary lg:mt-6" disabled={busy} onClick={bulkPrint}>Print Selected</button>
