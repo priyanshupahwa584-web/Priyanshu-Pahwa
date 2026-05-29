@@ -3,16 +3,44 @@ import { apiUrl } from './apiConfig';
 export type ApiError = Error & { status?: number; details?: unknown };
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
+const requestTimeoutMs = 25000;
+
+function clearLocalAuthState() {
+  try {
+    sessionStorage.removeItem('broadreach_auth_notice');
+  } catch {
+    // Ignore storage access restrictions in private/mobile browser modes.
+  }
+}
+
+function notifyUnauthorized(path: string) {
+  if (typeof window === 'undefined') return;
+  if (path.includes('/auth/login')) return;
+  clearLocalAuthState();
+  window.dispatchEvent(new CustomEvent('broadreach:unauthorized', {
+    detail: { message: 'Session expired. Please sign in again.' }
+  }));
+}
+
+function timeoutError() {
+  const error = new Error('Starting secure server...') as ApiError;
+  error.status = 408;
+  return error;
+}
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
     const response = await fetch(apiUrl(path), {
       ...options,
       credentials: 'include',
-      headers: options.body instanceof FormData ? options.headers : { ...jsonHeaders, ...(options.headers || {}) }
+      headers: options.body instanceof FormData ? options.headers : { ...jsonHeaders, ...(options.headers || {}) },
+      signal: options.signal || controller.signal
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
+      if (response.status === 401) notifyUnauthorized(path);
       const message = response.status >= 500 ? 'Server unavailable, please try again later.' : payload.message || 'Request failed.';
       const error = new Error(message) as ApiError;
       error.status = response.status;
@@ -23,7 +51,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     return response.json() as Promise<T>;
   } catch (error: any) {
     if (error.status) throw error;
+    if (error.name === 'AbortError') throw timeoutError();
     throw new Error('Server unavailable, please try again later.');
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 

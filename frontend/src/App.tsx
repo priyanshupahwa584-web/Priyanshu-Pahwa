@@ -62,28 +62,66 @@ function canAccess(user: User, section: SectionKey) {
 }
 
 export default function App() {
+  const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    api<{ user: User }>('/auth/me')
-      .then((response) => active && setUser(response.user))
-      .catch(() => null)
-      .finally(() => active && setLoading(false));
-    return () => {
-      active = false;
-    };
-  }, []);
+  const [startingServer, setStartingServer] = useState(false);
+  const [bootstrapRetry, setBootstrapRetry] = useState(0);
 
   const showNotice = (type: NoticeType, text: string) => {
     setNotice({ type, text });
     window.setTimeout(() => setNotice((current) => (current?.text === text ? null : current)), 4000);
   };
 
-  if (loading) return <Splash />;
-  if (!user) return <LoginScreen onLogin={setUser} notice={notice} showNotice={showNotice} />;
+  useEffect(() => {
+    let active = true;
+    const slowTimer = window.setTimeout(() => active && setStartingServer(true), 15000);
+    setLoading(true);
+    setStartingServer(false);
+    api<{ user: User }>('/auth/me')
+      .then((response) => {
+        if (!active) return;
+        setUser(response.user);
+      })
+      .catch((error: any) => {
+        if (!active) return;
+        setUser(null);
+        const message = error.status === 401
+          ? 'Session expired. Please sign in again.'
+          : error.status === 408
+            ? 'Starting secure server...'
+            : '';
+        if (message) setNotice({ type: 'info', text: message });
+      })
+      .finally(() => {
+        if (!active) return;
+        window.clearTimeout(slowTimer);
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+      window.clearTimeout(slowTimer);
+    };
+  }, [bootstrapRetry]);
+
+  useEffect(() => {
+    const expire = (event: Event) => {
+      const message = (event as CustomEvent<{ message?: string }>).detail?.message || 'Session expired. Please sign in again.';
+      setUser(null);
+      setLoading(false);
+      showNotice('info', message);
+    };
+    window.addEventListener('broadreach:unauthorized', expire);
+    return () => window.removeEventListener('broadreach:unauthorized', expire);
+  }, []);
+
+  if (loading) return <Splash startingServer={startingServer} onRetry={() => setBootstrapRetry((value) => value + 1)} />;
+  if (!user) {
+    const login = <LoginScreen onLogin={setUser} notice={notice} showNotice={showNotice} />;
+    if (location.pathname !== '/login') return <><Navigate to="/login" replace />{login}</>;
+    return login;
+  }
 
   return (
     <Shell user={user} setUser={setUser} notice={notice} showNotice={showNotice}>
@@ -109,12 +147,17 @@ export default function App() {
   );
 }
 
-function Splash() {
+function Splash({ startingServer = false, onRetry }: { startingServer?: boolean; onRetry?: () => void }) {
   return (
     <div className="grid min-h-screen place-items-center bg-broad-navy text-white">
       <div className="text-center">
         <img src="/icons/app-logo.png" className="mx-auto mb-6 w-72" alt="Broad Reach" />
-        <div className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-100">Loading secure workspace</div>
+        <div className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-100">{startingServer ? 'Starting secure server...' : 'Loading secure workspace'}</div>
+        {startingServer && (
+          <button className="button mt-6 border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={onRetry}>
+            Retry connection
+          </button>
+        )}
       </div>
     </div>
   );
@@ -203,12 +246,12 @@ function LoginScreen({ onLogin, notice, showNotice }: { onLogin: (user: User) =>
           Remember this device
         </label>
       )}
-      <button className="button button-primary mt-6 w-full py-3" disabled={busy || !form.username.trim() || !form.password || (requiresTwoFactor && !secondFactor.trim())} onClick={submit}>
+      <button className="button button-primary mt-6 w-full py-3.5 text-base" disabled={busy || !form.username.trim() || !form.password || (requiresTwoFactor && !secondFactor.trim())} onClick={submit}>
         {busy && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-        {busy ? 'Authenticating...' : 'Sign In'}
+        {busy ? 'Signing in...' : 'Sign In'}
       </button>
       <button className="mt-4 w-full text-center text-sm font-bold text-broad-teal transition hover:text-broad-cyan" disabled={resetBusy} onClick={forgotPassword}>
-        {resetBusy ? 'Preparing reset request...' : 'Forgot password? Start secure reset'}
+        {resetBusy ? 'Preparing reset request...' : 'Forgot password?'}
       </button>
       <p className="mt-5 text-center text-xs font-semibold text-slate-500">Need access? Contact admin</p>
     </AuthFrame>
@@ -217,33 +260,34 @@ function LoginScreen({ onLogin, notice, showNotice }: { onLogin: (user: User) =>
 
 function AuthFrame({ notice, children }: { notice: Notice; children: ReactNode }) {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-broad-navy p-4 sm:p-6">
-      <div className="absolute inset-0 bg-cover bg-center opacity-75" style={{ backgroundImage: "url('/icons/brand-hero.png')" }} />
+    <div className="relative min-h-screen overflow-hidden bg-broad-navy px-4 py-6 sm:px-6 lg:p-6">
+      <div className="absolute inset-0 hidden bg-cover bg-center opacity-70 lg:block" style={{ backgroundImage: "url('/icons/brand-hero.png')" }} />
       <div className="auth-pattern absolute inset-0" />
-      <div className="auth-orb absolute left-[12%] top-[22%] h-72 w-72 rounded-full bg-broad-cyan/20 blur-3xl" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_42%,rgba(20,184,184,0.18),transparent_34%),linear-gradient(90deg,rgba(4,12,20,0.94),rgba(4,12,20,0.56),rgba(4,12,20,0.94))]" />
-      <div className="relative mx-auto grid min-h-[calc(100vh-48px)] max-w-6xl place-items-center">
-        <div className="grid w-full max-w-5xl grid-cols-1 overflow-hidden rounded-3xl border border-white/15 bg-white/95 shadow-[0_32px_120px_rgba(0,0,0,0.42)] backdrop-blur-xl lg:grid-cols-[1fr_0.95fr]">
-          <div className="relative overflow-hidden bg-slate-950 p-8 text-white sm:p-10 lg:p-12">
+      <div className="auth-orb absolute left-[8%] top-[20%] h-60 w-60 rounded-full bg-broad-cyan/20 blur-3xl lg:h-72 lg:w-72" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_34%_42%,rgba(20,184,184,0.18),transparent_34%),linear-gradient(90deg,rgba(4,12,20,0.97),rgba(4,12,20,0.72),rgba(4,12,20,0.97))]" />
+      <div className="relative mx-auto grid min-h-[calc(100vh-48px)] w-full max-w-[1040px] place-items-center">
+        <div className="auth-card grid w-full overflow-hidden rounded-[1.7rem] border border-white/15 bg-white/95 shadow-[0_32px_120px_rgba(0,0,0,0.42)] backdrop-blur-xl lg:grid-cols-[0.95fr_1fr]">
+          <div className="relative hidden overflow-hidden bg-slate-950 p-10 text-white lg:block xl:p-12">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_35%,rgba(20,184,184,0.3),transparent_34%)]" />
             <div className="relative">
-              <img src="/icons/app-logo.png" alt="Broad Reach" className="mb-10 w-64 max-w-full drop-shadow-[0_0_22px_rgba(20,184,184,0.34)] sm:w-72" />
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-200">Secure Operations Access</p>
-              <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">Broadreach Operations Platform</h1>
-              <p className="mt-4 max-w-md text-base leading-7 text-slate-200 sm:text-lg sm:leading-8">Sign in to access facility intelligence, executive reporting, and team tools.</p>
-              <div className="mt-8 grid gap-3 text-sm text-slate-200">
-                <p className="rounded-xl border border-white/10 bg-white/5 p-4">Username and password only. No default password is shipped.</p>
-                <p className="rounded-xl border border-white/10 bg-white/5 p-4">Secure access keeps the operations workspace protected.</p>
-              </div>
+              <img src="/icons/app-logo.png" alt="Broad Reach" className="mb-10 w-56 max-w-full drop-shadow-[0_0_22px_rgba(20,184,184,0.34)] xl:w-64" />
+              <h1 className="text-3xl font-black tracking-tight xl:text-4xl">Broadreach Operations</h1>
+              <p className="mt-4 max-w-sm text-base leading-7 text-slate-200">Secure access to facility intelligence and operations tools.</p>
             </div>
           </div>
-          <div className="grid content-center p-6 sm:p-10">
+          <div className="auth-form-panel grid content-center p-5 sm:p-8 lg:min-h-[560px] lg:p-10">
+            <div className="mb-7 text-center lg:hidden">
+              <img src="/icons/app-logo.png" alt="Broad Reach" className="mx-auto mb-5 w-48 drop-shadow-[0_0_18px_rgba(20,184,184,0.28)] sm:w-56" />
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">Broadreach Operations</h1>
+            </div>
+            <div className="mb-6">
+              <h2 className="text-2xl font-black tracking-tight text-slate-950">Sign in</h2>
+            </div>
             {notice && <NoticeBanner notice={notice} />}
             {children}
           </div>
         </div>
-        <footer className="auth-footer mt-5 flex w-full max-w-5xl flex-col items-center justify-between gap-2 text-xs font-semibold text-slate-300 sm:flex-row">
-          <span>© Broadreach Operations Platform | Internal Use Only</span>
+        <footer className="auth-footer mt-5 hidden w-full max-w-[1040px] items-center justify-between gap-2 text-xs font-semibold text-slate-300 sm:flex">
           <span>&copy; Broadreach Operations Platform | Internal Use Only</span>
           <span>{appVersion}</span>
         </footer>
@@ -262,6 +306,7 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
     .filter((item) => item.sidebar !== false)
     .filter((item) => canAccess(user, item.key));
   const subtitle = current.subtitle || pageSubtitles[current.key] || 'Work safely and keep operations moving.';
+  const mobileTitle = current.key === 'data' ? 'Operations' : current.label;
   const showSidebarLabels = !sidebarCollapsed || mobileSidebarOpen;
 
   const logout = async (message?: string) => {
@@ -330,17 +375,17 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
               <MenuIcon />
             </button>
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-bold text-slate-950 sm:text-2xl">{current.label}</h1>
-              <p className="truncate text-sm text-slate-500">{subtitle}</p>
+              <h1 className="truncate text-xl font-bold text-slate-950 sm:text-2xl"><span className="sm:hidden">{mobileTitle}</span><span className="hidden sm:inline">{current.label}</span></h1>
+              <p className="hidden truncate text-sm text-slate-500 sm:block">{subtitle}</p>
             </div>
           </div>
           <div className="flex items-center justify-between gap-3 md:justify-end">
             <div className="grid h-10 w-10 place-items-center rounded-full bg-broad-navy font-bold text-white">{user.displayName?.[0] || user.username[0]}</div>
-            <div className="min-w-0">
+            <div className="hidden min-w-0 sm:block">
               <div className="text-sm font-bold">{user.displayName}</div>
               <div className="text-xs text-slate-500">{user.role}</div>
             </div>
-            <button className="button" onClick={() => logout()}>Logout</button>
+            <button className="button px-3 py-2 text-xs sm:px-4 sm:text-sm" onClick={() => logout()}>Logout</button>
           </div>
         </header>
         {notice && <div className="fixed right-6 top-24 z-50 w-96 max-w-[calc(100vw-48px)]"><NoticeBanner notice={notice} /></div>}
@@ -374,6 +419,7 @@ function useFacilityAnalytics(showNotice: (type: NoticeType, text: string) => vo
       if (facilitiesParam) query.set('facilities', facilitiesParam);
       setData(await api<FacilityAnalytics>(`/facility-intelligence?${query.toString()}`));
     } catch (error: any) {
+      if (error.status === 401) return;
       showNotice('error', friendlyOperationsError(error.message));
     } finally {
       setBusy(false);
@@ -388,6 +434,7 @@ function useFacilityAnalytics(showNotice: (type: NoticeType, text: string) => vo
 function DashboardPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
   const analytics = useFacilityAnalytics(showNotice, { duration: '30D' });
   const { data, busy, duration, setDuration, selectedFacilities, setSelectedFacilities, load } = analytics;
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const lineData = useChartWindow(data?.lineSeries || [], duration);
   return (
     <PageStack>
@@ -401,7 +448,13 @@ function DashboardPage({ showNotice }: { showNotice: (type: NoticeType, text: st
       {busy && !data ? <DashboardSkeleton /> : data ? (
         <>
           <FacilityKpis data={data} />
-          <FacilityLineChart title="Output Trend" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} />
+          <FacilityLineChart title="Output Trend" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} onExpand={() => setFullscreenOpen(true)} />
+          <FullscreenModal open={fullscreenOpen} title="Output Trend" onClose={() => setFullscreenOpen(false)}>
+            <div className="grid h-full min-h-0 gap-3">
+              <FacilityFilters data={data} duration={duration} setDuration={setDuration} selectedFacilities={selectedFacilities} setSelectedFacilities={setSelectedFacilities} compact />
+              <FacilityLineChart title="Output Trend" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} fullscreen />
+            </div>
+          </FullscreenModal>
         </>
       ) : <EmptyState text="No facility data found. Check connection or adjust filters." actionLabel="Refresh" onAction={load} />}
     </PageStack>
@@ -413,6 +466,7 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
   const { data, busy, duration, setDuration, aggregation, setAggregation, selectedFacilities, setSelectedFacilities, load } = analytics;
   const [chartType, setChartType] = useState('Line');
   const [heatmapSelection, setHeatmapSelection] = useState<HeatmapSelection>(null);
+  const [fullscreenView, setFullscreenView] = useState<'chart' | 'heatmap' | null>(null);
   const chartSeries = useMemo(() => {
     if (!data?.lineSeries) return [];
     if (!heatmapSelection) return data.lineSeries;
@@ -446,15 +500,8 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
     setSelectedFacilities([selection.facility]);
   };
   const lineData = useChartWindow(chartSeries, `${duration}-${heatmapSelection?.date || 'all'}`);
-  return (
-    <PageStack>
-      <PhaseHeader
-        title="Facility Operations"
-        subtitle="Live facility volume, trends, and performance movement."
-        meta={data ? `${number(data.recordCount)} facility records` : 'Preparing analytics'}
-        action={<button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh'}</button>}
-      />
-      {data && <FacilityKpis data={data} />}
+  const renderControls = () => data ? (
+    <>
       <FacilityFilters
         data={data}
         duration={duration}
@@ -472,34 +519,166 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
           <button className="button button-subtle" onClick={() => { setHeatmapSelection(null); setSelectedFacilities([]); }}>Clear focus</button>
         </div>
       )}
-      <div className="card flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="card flex flex-col gap-3 p-3.5 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Chart view</div>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Switch between trend, facility ranking, and volume share.</p>
+          <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Chart view</div>
+          <p className="mt-1 hidden text-sm font-semibold text-slate-500 sm:block">Switch between trend, facility ranking, and volume share.</p>
         </div>
         <Segmented value={chartType} options={chartTypeOptions} onChange={setChartType} />
       </div>
+    </>
+  ) : null;
+  return (
+    <PageStack>
+      <PhaseHeader
+        title="Facility Operations"
+        subtitle="Live facility volume, trends, and performance movement."
+        meta={data ? `${number(data.recordCount)} facility records` : 'Preparing analytics'}
+        action={<button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh'}</button>}
+      />
       {busy && !data ? <DashboardSkeleton /> : data ? (
-        <div className="grid gap-5">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.85fr)_minmax(360px,1fr)] 2xl:grid-cols-[minmax(0,2.1fr)_minmax(420px,1fr)]">
-            <div className="min-w-0">
-              {chartType === 'Line' && <FacilityLineChart title="Facility Trend Comparison" data={lineData} facilities={chartFacilities} allFacilities={data.facilities} compareMode />}
-              {chartType === 'Bar' && <FacilityBarChart data={focusedBarSeries} />}
-              {chartType === 'Pie' && <FacilityPieChart data={focusedPieSeries} />}
-            </div>
-            <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} />
-          </div>
-          <div className="max-h-[330px] overflow-auto rounded-xl">
-            <DataTable
-              title="Facility Ranking"
-              rows={data.facilityTotals}
-              columns={['facility', 'total']}
-              emptyText="No facility totals yet."
+        <>
+          <div className="facility-mobile-layout">
+            <FacilityKpis data={data} />
+            {renderControls()}
+            <FacilityChartView
+              chartType={chartType}
+              lineData={lineData}
+              facilities={chartFacilities}
+              allFacilities={data.facilities}
+              barSeries={focusedBarSeries}
+              pieSeries={focusedPieSeries}
+              onExpand={() => setFullscreenView('chart')}
             />
+            <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} onExpand={() => setFullscreenView('heatmap')} />
+            <div className="max-h-[360px] overflow-auto rounded-xl">
+              <DataTable
+                title="Facility Ranking"
+                rows={data.facilityTotals}
+                columns={['facility', 'total']}
+                emptyText="No facility totals yet."
+              />
+            </div>
           </div>
-        </div>
-      ) : <EmptyState text="No facility data found. Check connection or adjust filters." actionLabel="Refresh" onAction={load} />}
+          <div className="facility-desktop-layout">
+            <FacilityKpis data={data} />
+            {renderControls()}
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.85fr)_minmax(360px,1fr)] 2xl:grid-cols-[minmax(0,2.1fr)_minmax(420px,1fr)]">
+              <div className="min-w-0">
+                <FacilityChartView
+                  chartType={chartType}
+                  lineData={lineData}
+                  facilities={chartFacilities}
+                  allFacilities={data.facilities}
+                  barSeries={focusedBarSeries}
+                  pieSeries={focusedPieSeries}
+                  onExpand={() => setFullscreenView('chart')}
+                />
+              </div>
+              <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} onExpand={() => setFullscreenView('heatmap')} />
+            </div>
+            <div className="max-h-[330px] overflow-auto rounded-xl">
+              <DataTable
+                title="Facility Ranking"
+                rows={data.facilityTotals}
+                columns={['facility', 'total']}
+                emptyText="No facility totals yet."
+              />
+            </div>
+          </div>
+          <FullscreenModal
+            open={Boolean(fullscreenView)}
+            title={fullscreenView === 'heatmap' ? 'Facility Heatmap' : `${chartType} Chart`}
+            onClose={() => setFullscreenView(null)}
+          >
+            <div className="grid h-full min-h-0 gap-3">
+              {renderControls()}
+              {fullscreenView === 'heatmap' ? (
+                <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} fullscreen />
+              ) : (
+                <FacilityChartView
+                  chartType={chartType}
+                  lineData={lineData}
+                  facilities={chartFacilities}
+                  allFacilities={data.facilities}
+                  barSeries={focusedBarSeries}
+                  pieSeries={focusedPieSeries}
+                  fullscreen
+                />
+              )}
+            </div>
+          </FullscreenModal>
+        </>
+      ) : <SessionAwareEmptyState text="No facility data found. Check connection or adjust filters." actionLabel="Refresh" onAction={load} />}
     </PageStack>
+  );
+}
+
+function FacilityChartView({ chartType, lineData, facilities, allFacilities, barSeries, pieSeries, fullscreen = false, onExpand }: {
+  chartType: string;
+  lineData: ReturnType<typeof useChartWindow>;
+  facilities: string[];
+  allFacilities: string[];
+  barSeries: FacilityAnalytics['barSeries'];
+  pieSeries: FacilityAnalytics['pieSeries'];
+  fullscreen?: boolean;
+  onExpand?: () => void;
+}) {
+  return (
+    <>
+      {chartType === 'Line' && (
+        <FacilityLineChart
+          title="Facility Trend Comparison"
+          data={lineData}
+          facilities={facilities}
+          allFacilities={allFacilities}
+          compareMode
+          fullscreen={fullscreen}
+          onExpand={onExpand}
+        />
+      )}
+      {chartType === 'Bar' && <FacilityBarChart data={barSeries} fullscreen={fullscreen} onExpand={onExpand} />}
+      {chartType === 'Pie' && <FacilityPieChart data={pieSeries} fullscreen={fullscreen} onExpand={onExpand} />}
+    </>
+  );
+}
+
+function FullscreenModal({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="fullscreen-backdrop" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="fullscreen-panel">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-base font-black text-slate-950">{title}</div>
+            <div className="hidden text-xs font-bold uppercase tracking-[0.12em] text-slate-500 sm:block">Fullscreen operations view</div>
+          </div>
+          <button className="fullscreen-close" onClick={onClose} aria-label="Close fullscreen">Close</button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SessionAwareEmptyState({ text, actionLabel, onAction }: { text: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <EmptyState
+      text={text}
+      actionLabel={actionLabel}
+      onAction={onAction}
+    />
   );
 }
 
@@ -624,14 +803,14 @@ function FacilityFilters({ data, duration, setDuration, aggregation, setAggregat
       <div className="flex flex-col gap-3">
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
           <div className="flex min-w-0 flex-col gap-2">
-            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Range</span>
+            <span className="text-xs font-black uppercase tracking-[0.08em] text-slate-500 sm:tracking-[0.16em]">Range</span>
             <div className="overflow-x-auto pb-1">
               <Segmented value={duration} options={durationOptions} onChange={setDuration} />
             </div>
           </div>
           {aggregation && setAggregation && (
             <div className="flex min-w-0 flex-col gap-2 xl:items-end">
-              <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Aggregation</span>
+              <span className="text-xs font-black uppercase tracking-[0.08em] text-slate-500 sm:tracking-[0.16em]"><span className="sm:hidden">View</span><span className="hidden sm:inline">Aggregation</span></span>
               <div className="overflow-x-auto pb-1">
                 <Segmented value={aggregation} options={aggregationOptions} onChange={setAggregation} />
               </div>
@@ -640,7 +819,7 @@ function FacilityFilters({ data, duration, setDuration, aggregation, setAggregat
         </div>
         <div className="grid gap-3 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] lg:items-start">
           <div className="relative">
-            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-500">Facilities</span>
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.08em] text-slate-500 sm:tracking-[0.16em]"><span className="sm:hidden">Site</span><span className="hidden sm:inline">Facilities</span></span>
             <button
               className="facility-select-button"
               type="button"
@@ -676,7 +855,7 @@ function FacilityFilters({ data, duration, setDuration, aggregation, setAggregat
             )}
           </div>
           <div className="min-w-0">
-            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-500">Selected</span>
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.08em] text-slate-500 sm:tracking-[0.16em]">Selected</span>
             <div className="selected-facility-row">
               {!selectedFacilities.length ? (
                 <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-black uppercase tracking-[0.1em] text-slate-500">All facilities included</span>
@@ -694,12 +873,14 @@ function FacilityFilters({ data, duration, setDuration, aggregation, setAggregat
   );
 }
 
-function FacilityLineChart({ title, data, facilities, allFacilities, compareMode = false }: {
+function FacilityLineChart({ title, data, facilities, allFacilities, compareMode = false, fullscreen = false, onExpand }: {
   title: string;
   data: ReturnType<typeof useChartWindow>;
   facilities: string[];
   allFacilities: string[];
   compareMode?: boolean;
+  fullscreen?: boolean;
+  onExpand?: () => void;
 }) {
   const [dragStart, setDragStart] = useState<number | null>(null);
   const lineKeys = compareMode
@@ -721,16 +902,19 @@ function FacilityLineChart({ title, data, facilities, allFacilities, compareMode
           <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">{title}</h3>
           <p className="mt-1 text-sm text-slate-500">Explore pace, movement, and rolling trend across the selected window.</p>
         </div>
-        <div className="chart-toolbar" aria-label="Chart controls">
-          <button className="chart-toolbar-button" onClick={data.zoomIn} title="Zoom in">+</button>
-          <button className="chart-toolbar-button" onClick={data.zoomOut} title="Zoom out">−</button>
-          <button className="chart-toolbar-button" onClick={data.panLeft} title="Pan left">←</button>
-          <button className="chart-toolbar-button" onClick={data.panRight} title="Pan right">→</button>
-          <button className="chart-toolbar-button min-w-16 px-3" onClick={data.reset} title="Reset zoom">Reset</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onExpand && <button className="expand-button" onClick={onExpand} title="Expand chart">Expand</button>}
+          <div className="chart-toolbar" aria-label="Chart controls">
+            <button className="chart-toolbar-button" onClick={data.zoomIn} title="Zoom in">+</button>
+            <button className="chart-toolbar-button" onClick={data.zoomOut} title="Zoom out">-</button>
+            <button className="chart-toolbar-button" onClick={data.panLeft} title="Pan left">←</button>
+            <button className="chart-toolbar-button" onClick={data.panRight} title="Pan right">→</button>
+            <button className="chart-toolbar-button min-w-16 px-3" onClick={data.reset} title="Reset zoom">Reset</button>
+          </div>
         </div>
       </div>
       <div
-        className="mt-4 h-[46vh] min-h-[320px] max-h-[560px] cursor-grab select-none active:cursor-grabbing max-sm:h-[360px]"
+        className={`mt-4 cursor-grab select-none active:cursor-grabbing ${fullscreen ? 'h-[calc(100vh-265px)] min-h-[420px]' : 'h-[46vh] min-h-[300px] max-h-[560px] max-sm:h-[320px]'}`}
         onDoubleClick={data.reset}
         onMouseDown={(event) => setDragStart(event.clientX)}
         onMouseLeave={() => setDragStart(null)}
@@ -792,12 +976,17 @@ function FacilityTooltip({ active, payload, label }: { active?: boolean; payload
   );
 }
 
-function FacilityBarChart({ data }: { data: FacilityAnalytics['barSeries'] }) {
+function FacilityBarChart({ data, fullscreen = false, onExpand }: { data: FacilityAnalytics['barSeries']; fullscreen?: boolean; onExpand?: () => void }) {
   return (
     <div className="card p-5">
-      <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Totals</h3>
-      <p className="mt-1 text-sm text-slate-500">Sorted high to low for the selected period.</p>
-      <div className="mt-5 h-[42vh] min-h-[320px] max-h-[460px]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Totals</h3>
+          <p className="mt-1 text-sm text-slate-500">Sorted high to low for the selected period.</p>
+        </div>
+        {onExpand && <button className="expand-button" onClick={onExpand} title="Expand chart">Expand</button>}
+      </div>
+      <div className={`mt-5 ${fullscreen ? 'h-[calc(100vh-265px)] min-h-[420px]' : 'h-[42vh] min-h-[300px] max-h-[460px]'}`}>
         {data.length ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 18, right: 20, left: 0, bottom: 50 }}>
@@ -814,13 +1003,18 @@ function FacilityBarChart({ data }: { data: FacilityAnalytics['barSeries'] }) {
   );
 }
 
-function FacilityPieChart({ data }: { data: FacilityAnalytics['pieSeries'] }) {
+function FacilityPieChart({ data, fullscreen = false, onExpand }: { data: FacilityAnalytics['pieSeries']; fullscreen?: boolean; onExpand?: () => void }) {
   return (
     <div className="card p-5">
-      <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Share</h3>
-      <p className="mt-1 text-sm text-slate-500">Share of total packages by facility.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Share</h3>
+          <p className="mt-1 text-sm text-slate-500">Share of total packages by facility.</p>
+        </div>
+        {onExpand && <button className="expand-button" onClick={onExpand} title="Expand chart">Expand</button>}
+      </div>
       <div className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="mx-auto h-[42vh] min-h-[340px] w-full max-w-[620px] max-h-[520px]">
+        <div className={`mx-auto w-full max-w-[720px] ${fullscreen ? 'h-[calc(100vh-300px)] min-h-[420px]' : 'h-[42vh] min-h-[320px] max-h-[520px]'}`}>
           {data.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -845,7 +1039,7 @@ function FacilityPieChart({ data }: { data: FacilityAnalytics['pieSeries'] }) {
   );
 }
 
-function FacilityHeatmap({ data, selected, onSelect }: { data: FacilityAnalytics; selected: HeatmapSelection; onSelect: (selection: Exclude<HeatmapSelection, null>) => void }) {
+function FacilityHeatmap({ data, selected, onSelect, fullscreen = false, onExpand }: { data: FacilityAnalytics; selected: HeatmapSelection; onSelect: (selection: Exclude<HeatmapSelection, null>) => void; fullscreen?: boolean; onExpand?: () => void }) {
   const facilities = data.facilities || [];
   const rows = (data.lineSeries || []).map((point) => {
     const values = facilities.map((facility) => ({ facility, count: Number(point[facility] || 0) }));
@@ -874,14 +1068,17 @@ function FacilityHeatmap({ data, selected, onSelect }: { data: FacilityAnalytics
           <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Heatmap</h3>
           <p className="mt-1 text-sm text-slate-500">Volume intensity by facility and day. Click a cell to focus the charts.</p>
         </div>
-        <div className="heatmap-legend" aria-label="Facility ranking color legend">
-          <span>Lightest</span>
-          <span className="heatmap-legend-ramp" />
-          <span>Darkest</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="heatmap-legend" aria-label="Facility ranking color legend">
+            <span>Lightest</span>
+            <span className="heatmap-legend-ramp" />
+            <span>Darkest</span>
+          </div>
+          {onExpand && <button className="expand-button" onClick={onExpand} title="Expand heatmap">Expand</button>}
         </div>
       </div>
       {rows.length && facilities.length ? (
-        <div className="heatmap-scroll mt-4">
+        <div className={`heatmap-scroll mt-4 ${fullscreen ? 'heatmap-scroll-fullscreen' : ''}`}>
           <div className="heatmap-grid" style={{ gridTemplateColumns }}>
             <div className="heatmap-header heatmap-sticky-left">Date</div>
             {facilities.map((facility) => (
@@ -1389,20 +1586,67 @@ function UserCard({ user, roles, sections, onSave }: { user: any; roles: string[
 }
 
 function ActivityPage() {
+  const navigate = useNavigate();
   const [logs, setLogs] = useState<any[]>([]);
   const [uploads, setUploads] = useState<any[]>([]);
   const [exportsLog, setExportsLog] = useState<any[]>([]);
   const [printLogs, setPrintLogs] = useState<any[]>([]);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState('');
+  const load = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const audit = await api<{ rows: any[] }>('/logs/audit');
+      const [uploadRows, exportRows, printRows] = await Promise.all([
+        api<{ rows: any[] }>('/logs/uploads'),
+        api<{ rows: any[] }>('/logs/exports'),
+        api<{ rows: any[] }>('/labels/logs').catch(() => ({ rows: [] }))
+      ]);
+      setLogs(audit.rows || []);
+      setUploads(uploadRows.rows || []);
+      setExportsLog(exportRows.rows || []);
+      setPrintLogs(printRows.rows || []);
+    } catch (activityError: any) {
+      if (activityError.status === 401) {
+        setError('Please sign in again.');
+      } else {
+        setError(activityError.message || 'Activity could not be loaded.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
   useEffect(() => {
-    api<{ rows: any[] }>('/logs/audit').then((res) => setLogs(res.rows));
-    api<{ rows: any[] }>('/logs/uploads').then((res) => setUploads(res.rows));
-    api<{ rows: any[] }>('/logs/exports').then((res) => setExportsLog(res.rows));
-    api<{ rows: any[] }>('/labels/logs').then((res) => setPrintLogs(res.rows)).catch(() => null);
+    load();
   }, []);
+
+  if (busy) {
+    return (
+      <PageStack>
+        <PageHeader title="Activity Logs" subtitle="Review system activity and print history." />
+        <EmptyState text="Loading activity..." />
+      </PageStack>
+    );
+  }
+
+  if (error) {
+    return (
+      <PageStack>
+        <PageHeader title="Activity Logs" subtitle="Review system activity and print history." />
+        <EmptyState
+          text={error}
+          actionLabel={error === 'Please sign in again.' ? 'Go to login' : 'Refresh'}
+          onAction={error === 'Please sign in again.' ? () => navigate('/login') : load}
+        />
+      </PageStack>
+    );
+  }
+
   return (
     <PageStack>
       <PageHeader title="Activity Logs" subtitle="Review system activity and print history." />
-      <DataTable title="Team Activity" rows={logs} columns={['createdAt', 'actor', 'action', 'entity']} emptyText="No activity found." />
+      <DataTable title="Team Activity" rows={logs} columns={['createdAt', 'actor', 'action', 'entity']} emptyText="No activity recorded yet." />
       <DataTable title="Print History" rows={printLogs} columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'errorMessage']} emptyText="No print history yet." />
       <DataTable title="Import History" rows={uploads} columns={['createdAt', 'fileName', 'status', 'uploadedBy']} emptyText="No import history yet." />
       <DataTable title="Export History" rows={exportsLog} columns={['createdAt', 'format', 'rowCount', 'requestedBy']} emptyText="No export history yet." />

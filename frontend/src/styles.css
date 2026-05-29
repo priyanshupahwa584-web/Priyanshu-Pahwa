@@ -52,8 +52,43 @@
   opacity: 0.5;
 }
 
-.auth-footer span:first-child {
-  display: none;
+.auth-card {
+  max-width: 100%;
+}
+
+.auth-form-panel {
+  min-width: 0;
+}
+
+.auth-form-panel .input {
+  min-height: 3rem;
+  font-size: 1rem;
+}
+
+@media (max-width: 1024px) {
+  .auth-card {
+    max-width: 34rem;
+  }
+
+  .auth-form-panel {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .auth-pattern {
+    animation: none;
+    opacity: 0.28;
+  }
+
+  .auth-card {
+    max-width: 27rem;
+    border-radius: 1.25rem;
+  }
+
+  .auth-form-panel .label {
+    gap: 0.45rem;
+  }
 }
 
 .app-shell {
@@ -125,6 +160,26 @@
 @media (max-width: 767px) {
   .recharts-legend-wrapper {
     font-size: 12px;
+  }
+}
+
+.facility-mobile-layout {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.facility-desktop-layout {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .facility-mobile-layout {
+    display: none;
+  }
+
+  .facility-desktop-layout {
+    display: grid;
+    gap: 1.25rem;
   }
 }
 
@@ -224,8 +279,28 @@
     @apply inline-flex h-9 min-w-9 shrink-0 items-center justify-center rounded-lg px-2 text-sm font-black text-slate-700 transition hover:bg-white hover:text-slate-950 hover:shadow-sm active:scale-95 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
+  .expand-button {
+    @apply inline-flex items-center justify-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.08em] text-slate-700 shadow-sm transition hover:border-slate-800 hover:bg-stone-50 hover:text-slate-950 active:scale-95;
+  }
+
+  .fullscreen-backdrop {
+    @apply fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 p-3 backdrop-blur-md sm:p-5;
+  }
+
+  .fullscreen-panel {
+    @apply flex h-screen w-screen flex-col overflow-hidden bg-[#f6f4ef] shadow-[0_32px_120px_rgba(0,0,0,0.36)] sm:h-[100vh] sm:w-[100vw] xl:h-[90vh] xl:w-[95vw] xl:rounded-3xl xl:border xl:border-white/40;
+  }
+
+  .fullscreen-close {
+    @apply rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-black text-slate-800 shadow-sm transition hover:border-slate-900 hover:bg-stone-50;
+  }
+
   .heatmap-scroll {
     @apply max-h-[52vh] overflow-auto rounded-xl border border-stone-200 bg-stone-50/70 p-2 xl:max-h-[560px];
+  }
+
+  .heatmap-scroll-fullscreen {
+    @apply max-h-[calc(100vh-250px)] xl:max-h-[calc(90vh-250px)];
   }
 
   .heatmap-grid {
@@ -275,5 +350,20 @@
 
   .skeleton-panel {
     @apply h-96 animate-pulse rounded-xl border border-stone-200 bg-gradient-to-br from-white via-stone-100 to-white shadow-enterprise;
+  }
+}
+
+@media (max-width: 899px) {
+  .facility-menu {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    top: 4.75rem;
+    width: auto;
+    max-height: calc(100vh - 6rem);
+  }
+
+  .facility-menu > div:last-child {
+    max-height: calc(100vh - 16rem);
   }
 }
