@@ -17,6 +17,7 @@ import { fulfilmentRouter } from './routes/fulfilment.js';
 import { logsRouter } from './routes/logs.js';
 import { usersRouter } from './routes/users.js';
 import { apiRateLimit, enforceHttpsInProduction, errorHandler, sameOriginProtection } from './middleware/security.js';
+import { checkStorage } from './services/storageChecks.js';
 
 export const app = express();
 
@@ -83,6 +84,17 @@ export function startServer(port = config.port) {
     console.log(`Broadreach Operations Platform running on http://127.0.0.1:${port}`);
     const authWarning = adminAuthConfigWarning();
     if (authWarning) console.warn(`Auth configuration warning: ${authWarning}`);
+    checkStorage()
+      .then((storage) => {
+        const warnings = [];
+        if (!storage.facilitySourceReadable) warnings.push('facility source is not readable');
+        if (!storage.platformDataReadable) warnings.push('platform data sheet is not readable');
+        if (!storage.platformDataWritable) warnings.push('platform data sheet is not writable');
+        if (!storage.driveFolderWritable) warnings.push('drive folder is not writable');
+        if (storage.missingPlatformTabs.length) warnings.push(`missing platform tabs: ${storage.missingPlatformTabs.join(', ')}`);
+        if (warnings.length) console.warn(`Storage check warning: ${warnings.join('; ')}`);
+      })
+      .catch((error) => console.warn(`Storage check failed: ${error.message}`));
   });
 }
 

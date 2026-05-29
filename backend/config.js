@@ -80,6 +80,9 @@ function configuredCorsOrigins() {
 
 const generatedSecret = crypto.randomBytes(48).toString('hex');
 const resolvedGoogleCredentials = googleCredentials();
+const legacyGoogleSheetId = required('GOOGLE_SHEET_ID');
+const facilitySourceSheetId = required('FACILITY_SOURCE_SHEET_ID') || legacyGoogleSheetId;
+const platformDataSheetId = required('PLATFORM_DATA_SHEET_ID');
 
 function isBcryptHash(value) {
   return /^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$/.test(String(value || ''));
@@ -104,7 +107,9 @@ export const config = {
     clientEmail: resolvedGoogleCredentials.clientEmail,
     privateKey: resolvedGoogleCredentials.privateKey,
     configError: resolvedGoogleCredentials.configError,
-    sheetId: required('GOOGLE_SHEET_ID'),
+    legacySheetId: legacyGoogleSheetId,
+    facilitySourceSheetId,
+    platformDataSheetId,
     driveFolderId: required('GOOGLE_DRIVE_FOLDER_ID')
   },
   corsOrigins: configuredCorsOrigins(),
@@ -150,12 +155,54 @@ export function isAllowedOrigin(origin) {
 }
 
 export function googleConfigured() {
-  return Boolean(!config.google.configError && config.google.clientEmail && config.google.privateKey && config.google.sheetId);
+  return googleCredentialsConfigured() && Boolean(config.google.facilitySourceSheetId || config.google.platformDataSheetId);
 }
 
-export function googleConfigError() {
+export function googleCredentialsConfigured() {
+  return Boolean(!config.google.configError && config.google.clientEmail && config.google.privateKey);
+}
+
+export function googleCredentialsError() {
   if (config.google.configError) return config.google.configError;
   if (!config.google.clientEmail || !config.google.privateKey) return 'Google service account credentials are not configured on the server.';
-  if (!config.google.sheetId) return 'GOOGLE_SHEET_ID is not configured on the server.';
   return '';
+}
+
+export function facilitySourceConfigured() {
+  return googleCredentialsConfigured() && Boolean(config.google.facilitySourceSheetId);
+}
+
+export function platformStorageConfigured() {
+  return googleCredentialsConfigured() && Boolean(config.google.platformDataSheetId);
+}
+
+export function facilitySourceConfigError() {
+  const credentialsError = googleCredentialsError();
+  if (credentialsError) return credentialsError;
+  if (!config.google.facilitySourceSheetId) {
+    return 'FACILITY_SOURCE_SHEET_ID is not configured. Set it to the Facility Operations source spreadsheet ID, or set GOOGLE_SHEET_ID for the legacy Facility Operations fallback.';
+  }
+  return '';
+}
+
+export function platformStorageConfigError() {
+  const credentialsError = googleCredentialsError();
+  if (credentialsError) return credentialsError;
+  if (!config.google.platformDataSheetId) {
+    return 'PLATFORM_DATA_SHEET_ID is not configured. Set it to the BROPS Platform Data spreadsheet ID before using Users, Metro Labeling, sessions, audit, uploads, exports, or settings.';
+  }
+  return '';
+}
+
+export function driveStorageConfigError() {
+  const credentialsError = googleCredentialsError();
+  if (credentialsError) return credentialsError;
+  if (!config.google.driveFolderId) return 'GOOGLE_DRIVE_FOLDER_ID is not configured on the server.';
+  return '';
+}
+
+export function googleConfigError(target = 'platform') {
+  if (target === 'facility') return facilitySourceConfigError();
+  if (target === 'drive') return driveStorageConfigError();
+  return platformStorageConfigError();
 }

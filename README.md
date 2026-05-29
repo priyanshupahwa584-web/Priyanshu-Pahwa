@@ -7,7 +7,8 @@ Secure production web application for Broadreach operations data, Metro labeling
 - Frontend: React + Vite + TypeScript + Tailwind + Recharts
 - Backend: Node.js + Express
 - Auth: username/password, bcrypt hashes only, JWT session cookie, TOTP 2FA, recovery codes, and tracked sessions
-- Data source: Google Sheets API
+- Facility Operations source: Google Sheets API read-only source workbook
+- Platform app storage: separate writable Google Sheets API workbook
 - File storage: Google Drive API
 - Local label printing: Broadreach Windows Print Agent on each printing workstation
 - Exports: CSV, XLSX, and PDF generated from real table/JSON data
@@ -15,19 +16,26 @@ Secure production web application for Broadreach operations data, Metro labeling
 
 Google credentials are used only by the backend. The frontend never receives service account JSON, private keys, or Google API credentials.
 
-## Required Google Sheet Tabs
+## Google Storage Layout
 
-The app can initialize these tabs from Settings after credentials are configured:
+Facility Operations reads from the source workbook only. The source workbook is never initialized or modified by the app.
 
-- `OperationsData`
-- `Users`
-- `AuditLogs`
-- `UploadLogs`
-- `ExportLogs`
-- `MetroLabeling`
-- `FulfilmentReports`
-- `PrintLogs`
-- `UserSessions`
+- Env: `FACILITY_SOURCE_SHEET_ID`
+- Legacy fallback: `GOOGLE_SHEET_ID`, used only when `FACILITY_SOURCE_SHEET_ID` is blank
+- Spreadsheet ID: `1DW6zJ9o5drGt3CyRZWG-mgbzfVGwvaWwFPQ5znHeJkI`
+- Tab: `Sort 2026- Jan 01- Dec 31st`
+
+Writable app storage uses a separate Platform Data workbook:
+
+- Env: `PLATFORM_DATA_SHEET_ID`
+- Tabs initialized from Settings: `Users`, `UserSessions`, `AuditLogs`, `MetroLabeling`, `MetroPrintHistory`, `UploadLogs`, `ExportLogs`, `Settings`
+
+Uploaded files and generated archives use `GOOGLE_DRIVE_FOLDER_ID` with these folders:
+
+- `Metro Uploads`
+- `Reports`
+- `Labels`
+- `Backups`
 
 ### MetroLabeling
 
@@ -41,7 +49,7 @@ Columns:
 
 `id, reportDate, client, service, route, totalUploaded, totalPrinted, pending, errors, completionPercent, createdBy, createdAt`
 
-### PrintLogs
+### MetroPrintHistory
 
 Columns:
 
@@ -61,8 +69,11 @@ GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"...","priva
 GOOGLE_PROJECT_ID=your-project-id
 GOOGLE_CLIENT_EMAIL=service-account@project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-GOOGLE_SHEET_ID=your-google-sheet-id
-GOOGLE_DRIVE_FOLDER_ID=your-drive-folder-id
+FACILITY_SOURCE_SHEET_ID=1DW6zJ9o5drGt3CyRZWG-mgbzfVGwvaWwFPQ5znHeJkI
+PLATFORM_DATA_SHEET_ID=your-brops-platform-data-spreadsheet-id
+GOOGLE_DRIVE_FOLDER_ID=your-brops-storage-folder-id
+# Optional legacy fallback for Facility Operations only:
+GOOGLE_SHEET_ID=
 CORS_ORIGIN=https://your-vercel-frontend.vercel.app
 VITE_API_URL=https://priyanshu-pahwa.onrender.com
 ```
@@ -105,10 +116,7 @@ VITE_API_URL=<your-local-backend-url>
 - `POST /api/auth/2fa/disable`
 - `GET /api/auth/sessions`
 - `POST /api/auth/logout-all`
-- `GET /api/data`
-- `POST /api/data`
-- `PUT /api/data/:id`
-- `DELETE /api/data/:id`
+- `GET /api/data` (read-only Facility Operations source)
 - `GET /api/dashboard`
 - `POST /api/imports`
 - `POST /api/exports`
@@ -141,6 +149,7 @@ VITE_API_URL=<your-local-backend-url>
 - `GET /api/metro-labeling/history`
 - `GET /api/logs/audit`
 - `GET /api/health`
+- `POST /api/health/initialize-platform-storage`
 
 ## Security
 
@@ -165,15 +174,15 @@ VITE_API_URL=<your-local-backend-url>
 
 ## Import and Export
 
-Imports support `.csv`, `.xlsx`, `.xlsm`, and `.json`. Rows are validated before being saved to `OperationsData`. Uploaded files are stored in the configured Google Drive folder and logged in `UploadLogs`.
+Imports support `.csv`, `.xlsx`, `.xlsm`, and `.json`. Rows are validated before being saved to platform app storage. Uploaded files are archived under `Metro Uploads` in the configured Google Drive folder and logged in `UploadLogs`. The Facility Operations source workbook is never modified by imports.
 
-Exports generate real data files from filtered table data:
+Exports generate real data files from the read-only Facility Operations source data:
 
 - CSV
 - XLSX
 - PDF
 
-Each export includes filters, row count, user, and timestamp metadata. Exported files are uploaded to Google Drive and logged in `ExportLogs`.
+Each export includes filters, row count, user, and timestamp metadata. Exported files are uploaded under `Reports` in Google Drive and logged in `ExportLogs`.
 
 ## Metro Labeling
 
@@ -187,7 +196,7 @@ Supported actions:
 - Scan a tracking number, select the matching label, and print automatically when Scan Mode is enabled.
 - Preview a real 4x2 label layout.
 - Print one label, reprint a label, or bulk print selected labels.
-- Write every print/reprint/error to `PrintLogs` and `AuditLogs`.
+- Write every print/reprint/error to `MetroPrintHistory` and `AuditLogs`.
 
 ## Windows Print Agent
 
@@ -224,7 +233,7 @@ print-agent\dist\BroadreachPrintAgent.exe
 npm run verify
 ```
 
-Verification checks backend syntax, frontend typecheck/build, login behavior, health endpoint, the missing Google configuration message, Metro Labeling routes, Fulfilment Report routes, export routes, and the label print test route.
+Verification checks backend syntax, frontend typecheck/build, login behavior, health endpoint, storage setup reporting, the missing Google configuration message, Metro Labeling routes, Fulfilment Report routes, export routes, and the label print test route.
 
 ## Vercel Frontend Deployment
 
@@ -247,7 +256,7 @@ Render settings:
 - Build Command: `npm install`
 - Start Command: `npm start`
 - Environment: Node
-- Required production env: `NODE_ENV=production`, `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `GOOGLE_SERVICE_ACCOUNT_JSON` or split Google service account values, `GOOGLE_SHEET_ID`, `GOOGLE_DRIVE_FOLDER_ID`
+- Required production env: `NODE_ENV=production`, `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `GOOGLE_SERVICE_ACCOUNT_JSON` or split Google service account values, `FACILITY_SOURCE_SHEET_ID`, `PLATFORM_DATA_SHEET_ID`, `GOOGLE_DRIVE_FOLDER_ID`
 - CORS: set `CORS_ORIGIN` to your exact Vercel frontend URL. If omitted in production, the backend allows `https://*.vercel.app` as a safe Vercel fallback.
 
 ```bash

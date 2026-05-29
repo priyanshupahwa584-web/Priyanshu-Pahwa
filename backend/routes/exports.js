@@ -3,6 +3,7 @@ import { authRequired, requireAccess } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
 import { buildExport, mimeFor } from '../services/exportService.js';
 import { uploadBufferToDrive } from '../services/googleDrive.js';
+import { readFacilityOperationRows } from '../services/facilityAnalyticsService.js';
 import { appendRows, readRows } from '../services/googleSheets.js';
 import { tabs } from '../services/sheetSchema.js';
 import { id, nowIso } from '../utils/ids.js';
@@ -22,7 +23,8 @@ exportsRouter.get('/logs', authRequired, requireAccess('exports'), async (_req, 
 exportsRouter.post('/', authRequired, requireAccess('exports'), async (req, res, next) => {
   try {
     const body = exportSchema.parse(req.body);
-    const rows = filterOperations(await readRows(tabs.operations), body.filters);
+    const source = await readFacilityOperationRows();
+    const rows = filterOperations(source.rows, body.filters);
     const timestamp = nowIso();
     const metadata = {
       user: req.user.username,
@@ -32,7 +34,7 @@ exportsRouter.post('/', authRequired, requireAccess('exports'), async (req, res,
     };
     const buffer = await buildExport(body.format, rows, metadata);
     const fileName = `broadreach-export-${timestamp.replace(/[:.]/g, '-')}.${body.format}`;
-    const driveFile = await uploadBufferToDrive({ buffer, fileName, mimeType: mimeFor(body.format) });
+    const driveFile = await uploadBufferToDrive({ buffer, fileName, mimeType: mimeFor(body.format), folderName: 'Reports' });
     await appendRows(tabs.exports, [{
       id: id('export'),
       type: 'operations-data',

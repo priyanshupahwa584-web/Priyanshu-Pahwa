@@ -6,9 +6,21 @@ export const tabs = {
   exports: 'ExportLogs',
   metroLabeling: 'MetroLabeling',
   fulfilmentReports: 'FulfilmentReports',
-  printLogs: 'PrintLogs',
-  sessions: 'UserSessions'
+  printLogs: 'MetroPrintHistory',
+  sessions: 'UserSessions',
+  settings: 'Settings'
 };
+
+export const platformTabNames = [
+  tabs.users,
+  tabs.sessions,
+  tabs.audit,
+  tabs.metroLabeling,
+  tabs.printLogs,
+  tabs.uploads,
+  tabs.exports,
+  tabs.settings
+];
 
 export const sheetHeaders = {
   [tabs.operations]: [
@@ -114,6 +126,12 @@ export const sheetHeaders = {
     'expiresAt',
     'revokedAt',
     'revokedBy'
+  ],
+  [tabs.settings]: [
+    'key',
+    'value',
+    'updatedAt',
+    'updatedBy'
   ]
 };
 

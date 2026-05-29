@@ -51,7 +51,7 @@ export function errorHandler(error, _req, res, _next) {
     return res.status(503).json({ message: 'Platform storage permission is blocked. Admin can check system access.' });
   }
   if (upstreamStatus === 404) {
-    return res.status(503).json({ message: 'Platform storage is not initialized. Admin can initialize system tabs.' });
+    return res.status(503).json({ message: 'Platform storage is not initialized. Admin can initialize platform storage from Settings.' });
   }
   console.error(error);
   return res.status(500).json({ message: 'Server unavailable, please try again later.' });

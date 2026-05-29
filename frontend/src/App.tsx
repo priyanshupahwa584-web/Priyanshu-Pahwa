@@ -2211,17 +2211,25 @@ function SecurityPage({ user, showNotice }: { user: User; showNotice: (type: Not
 function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: NoticeType, text: string) => void }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [health, setHealth] = useState<any>(null);
+  const [initBusy, setInitBusy] = useState(false);
+  const loadHealth = async () => setHealth(await api('/health'));
   useEffect(() => {
-    api('/health').then(setHealth).catch(() => null);
+    loadHealth().catch(() => null);
   }, []);
   const initialize = async () => {
+    setInitBusy(true);
     try {
-      const response = await postJson<{ message: string }>('/health/initialize-google-tabs', {});
+      const response = await postJson<{ message: string }>('/health/initialize-platform-storage', {});
       showNotice('success', response.message);
+      await loadHealth();
     } catch (error: any) {
       showNotice('error', error.message);
+    } finally {
+      setInitBusy(false);
     }
   };
+  const missingPlatformTabs = health?.missingPlatformTabs || [];
+  const platformMissing = health && !health.platformDataConfigured;
   return (
     <PageStack>
       <PageHeader title="Settings" subtitle="Manage platform preferences and system setup." />
@@ -2230,7 +2238,25 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
           <MiniStatus label="Theme" value="Enterprise light" />
           <MiniStatus label="Session" value="Protected" />
           <MiniStatus label="Access" value={user.role} />
+          {health && <MiniStatus label="Facility Source" value={health.facilitySourceReadable ? 'Readable' : 'Check setup'} />}
+          {health && <MiniStatus label="Platform Data" value={health.platformDataWritable ? 'Writable' : health.platformDataReadable ? 'Read only' : 'Check setup'} />}
+          {health && <MiniStatus label="Drive Folder" value={health.driveFolderWritable ? 'Writable' : 'Check setup'} />}
         </div>
+        {platformMissing && (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
+            PLATFORM_DATA_SHEET_ID is missing. Users, sessions, audit logs, Metro Labeling, print history, uploads, and exports are in setup-safe mode until Admin sets the BROPS Platform Data spreadsheet ID.
+          </div>
+        )}
+        {health && health.platformDataConfigured && !health.platformDataWritable && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+            Platform data sheet is not writable. Share the BROPS Platform Data spreadsheet with the service account as an editor.
+          </div>
+        )}
+        {missingPlatformTabs.length > 0 && health?.platformDataConfigured && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+            Missing platform tabs: {missingPlatformTabs.join(', ')}.
+          </div>
+        )}
         {health && !health.driveFolderConfigured && (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
             Drive archive folder not configured. Metro imports still work, but original upload files will not be archived until Admin sets GOOGLE_DRIVE_FOLDER_ID.
@@ -2246,8 +2272,10 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
             <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
               <div className="text-sm font-black uppercase tracking-[0.14em] text-amber-700">System Setup</div>
               <p className="mt-2 text-sm font-semibold text-amber-800">Admin use only.</p>
-              <p className="mt-2 text-sm text-amber-800">Use this only when Users, sessions, activity, print logs, or Metro storage need to be initialized or repaired.</p>
-              <button className="button button-primary mt-4" onClick={initialize}>Initialize System Tabs</button>
+              <p className="mt-2 text-sm text-amber-800">Use this only when Users, sessions, activity, print history, or Metro storage need to be initialized or repaired.</p>
+              <button className="button button-primary mt-4" disabled={initBusy || platformMissing} onClick={initialize}>
+                {initBusy ? 'Initializing...' : 'Initialize Platform Storage'}
+              </button>
             </div>
           )}
         </Panel>

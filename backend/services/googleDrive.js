@@ -1,18 +1,26 @@
 import fs from 'node:fs';
-import { config } from '../config.js';
+import { config, driveStorageConfigError } from '../config.js';
 import { getDriveClient } from './googleClient.js';
 
-export async function uploadFileToDrive({ filePath, fileName, mimeType }) {
+export const driveStorageFolders = ['Metro Uploads', 'Reports', 'Labels', 'Backups'];
+
+function driveFolderId() {
   if (!config.google.driveFolderId) {
-    const error = new Error('GOOGLE_DRIVE_FOLDER_ID is not configured on the server.');
+    const error = new Error(driveStorageConfigError() || 'GOOGLE_DRIVE_FOLDER_ID is not configured on the server.');
     error.statusCode = 503;
+    error.code = 'drive_folder_missing';
     throw error;
   }
+  return config.google.driveFolderId;
+}
+
+export async function uploadFileToDrive({ filePath, fileName, mimeType, folderName = '' }) {
+  const parent = folderName ? await ensureDriveSubfolder(folderName) : { id: driveFolderId() };
   const drive = getDriveClient();
   const response = await drive.files.create({
     requestBody: {
       name: fileName,
-      parents: [config.google.driveFolderId]
+      parents: [parent.id]
     },
     media: {
       mimeType,
@@ -24,17 +32,13 @@ export async function uploadFileToDrive({ filePath, fileName, mimeType }) {
 }
 
 export async function ensureDriveSubfolder(folderName) {
-  if (!config.google.driveFolderId) {
-    const error = new Error('GOOGLE_DRIVE_FOLDER_ID is not configured on the server.');
-    error.statusCode = 503;
-    throw error;
-  }
+  const rootFolderId = driveFolderId();
   const drive = getDriveClient();
   const safeFolderName = String(folderName || '').replace(/[\\/]/g, '-').trim();
   const query = [
     `name = '${safeFolderName.replace(/'/g, "\\'")}'`,
     "mimeType = 'application/vnd.google-apps.folder'",
-    `'${config.google.driveFolderId}' in parents`,
+    `'${rootFolderId}' in parents`,
     'trashed = false'
   ].join(' and ');
   const existing = await drive.files.list({
@@ -48,7 +52,7 @@ export async function ensureDriveSubfolder(folderName) {
     requestBody: {
       name: safeFolderName,
       mimeType: 'application/vnd.google-apps.folder',
-      parents: [config.google.driveFolderId]
+      parents: [rootFolderId]
     },
     fields: 'id,name'
   });
@@ -56,27 +60,14 @@ export async function ensureDriveSubfolder(folderName) {
 }
 
 export async function uploadFileToDriveFolder({ filePath, fileName, mimeType, folderName }) {
-  const folder = await ensureDriveSubfolder(folderName);
-  const drive = getDriveClient();
-  const response = await drive.files.create({
-    requestBody: {
-      name: fileName,
-      parents: [folder.id]
-    },
-    media: {
-      mimeType,
-      body: fs.createReadStream(filePath)
-    },
-    fields: 'id,name,mimeType,size,webViewLink'
-  });
-  return response.data;
+  return uploadFileToDrive({ filePath, fileName, mimeType, folderName });
 }
 
-export async function uploadBufferToDrive({ buffer, fileName, mimeType }) {
+export async function uploadBufferToDrive({ buffer, fileName, mimeType, folderName = 'Reports' }) {
   const tempPath = `${config.exportDir}/${Date.now()}-${fileName}`;
   fs.writeFileSync(tempPath, buffer);
   try {
-    return await uploadFileToDrive({ filePath: tempPath, fileName, mimeType });
+    return await uploadFileToDrive({ filePath: tempPath, fileName, mimeType, folderName });
   } finally {
     fs.rmSync(tempPath, { force: true });
   }

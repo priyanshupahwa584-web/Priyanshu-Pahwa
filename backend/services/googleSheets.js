@@ -1,6 +1,6 @@
-import { config } from '../config.js';
+import { config, platformStorageConfigError, platformStorageConfigured } from '../config.js';
 import { getSheetsClient } from './googleClient.js';
-import { sheetHeaders } from './sheetSchema.js';
+import { platformTabNames, sheetHeaders } from './sheetSchema.js';
 
 let spreadsheetMetaCache = null;
 
@@ -28,11 +28,21 @@ function fromRows(headers, rows) {
   }));
 }
 
+function platformDataSpreadsheetId() {
+  if (!platformStorageConfigured()) {
+    const error = new Error(platformStorageConfigError() || 'Platform data storage is not configured.');
+    error.statusCode = 503;
+    error.code = 'platform_storage_missing';
+    throw error;
+  }
+  return config.google.platformDataSheetId;
+}
+
 async function spreadsheetMeta(force = false) {
   if (spreadsheetMetaCache && !force) return spreadsheetMetaCache;
   const sheets = getSheetsClient();
   const response = await sheets.spreadsheets.get({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: platformDataSpreadsheetId(),
     fields: 'sheets(properties(sheetId,title))'
   });
   spreadsheetMetaCache = response.data.sheets || [];
@@ -50,7 +60,7 @@ export async function ensureTab(tabName) {
   let property = await sheetProperty(tabName);
   if (!property) {
     await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: config.google.sheetId,
+      spreadsheetId: platformDataSpreadsheetId(),
       requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] }
     });
     spreadsheetMetaCache = null;
@@ -58,13 +68,13 @@ export async function ensureTab(tabName) {
   }
   const headerRange = `${tabName}!A1:${columnName(headers.length - 1)}1`;
   const existing = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: platformDataSpreadsheetId(),
     range: headerRange
   }).catch(() => ({ data: { values: [] } }));
   const currentHeaders = existing.data.values?.[0] || [];
   if (headers.some((header, index) => currentHeaders[index] !== header)) {
     await sheets.spreadsheets.values.update({
-      spreadsheetId: config.google.sheetId,
+      spreadsheetId: platformDataSpreadsheetId(),
       range: headerRange,
       valueInputOption: 'RAW',
       requestBody: { values: [headers] }
@@ -78,7 +88,7 @@ export async function readRows(tabName) {
   const headers = sheetHeaders[tabName];
   const sheets = getSheetsClient();
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: platformDataSpreadsheetId(),
     range: `${tabName}!A2:${columnName(headers.length - 1)}`
   });
   return fromRows(headers, response.data.values || []);
@@ -91,7 +101,7 @@ export async function appendRows(tabName, records) {
   const values = records.map((record) => headers.map((header) => toCell(record[header])));
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: platformDataSpreadsheetId(),
     range: `${tabName}!A:${columnName(headers.length - 1)}`,
     valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
@@ -106,12 +116,12 @@ export async function replaceRows(tabName, records) {
   const sheets = getSheetsClient();
   const property = await sheetProperty(tabName);
   await sheets.spreadsheets.values.clear({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: platformDataSpreadsheetId(),
     range: `${tabName}!A2:${columnName(headers.length - 1)}`
   });
   if (property?.gridProperties?.rowCount > 2) {
     await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: config.google.sheetId,
+      spreadsheetId: platformDataSpreadsheetId(),
       requestBody: {
         requests: [{
           deleteDimension: {
@@ -133,7 +143,7 @@ export async function updateRowById(tabName, rowId, patch) {
   delete next._rowNumber;
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.update({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: platformDataSpreadsheetId(),
     range: `${tabName}!A${existing._rowNumber}:${columnName(headers.length - 1)}${existing._rowNumber}`,
     valueInputOption: 'RAW',
     requestBody: { values: [headers.map((header) => toCell(next[header]))] }
@@ -148,7 +158,7 @@ export async function deleteRowById(tabName, rowId) {
   const property = await sheetProperty(tabName);
   const sheets = getSheetsClient();
   await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: config.google.sheetId,
+    spreadsheetId: platformDataSpreadsheetId(),
     requestBody: {
       requests: [{
         deleteDimension: {
@@ -165,6 +175,8 @@ export async function deleteRowById(tabName, rowId) {
   return true;
 }
 
-export async function ensureCoreTabs() {
-  await Promise.all(Object.keys(sheetHeaders).map((tabName) => ensureTab(tabName)));
+export async function ensurePlatformStorage() {
+  await Promise.all(platformTabNames.map((tabName) => ensureTab(tabName)));
 }
+
+export const ensureCoreTabs = ensurePlatformStorage;

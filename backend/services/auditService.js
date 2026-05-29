@@ -16,7 +16,7 @@ export async function audit({ actor = 'system', action, entity, entityId = '', i
       createdAt: nowIso()
     }]);
   } catch (error) {
-    if (error?.statusCode === 503 && String(error.message || '').includes('credentials are not configured')) return;
+    if (error?.statusCode === 503) return;
     console.error('Audit log failed:', error.message);
   }
 }

@@ -39,6 +39,12 @@ try {
   assert(result.body.adminAuth?.passwordHashConfigured === true, 'health endpoint should report admin hash configured');
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
   assert(result.body.driveFolderConfigured === false, 'health endpoint should report missing Drive archive folder in local verify');
+  assert(result.body.platformDataConfigured === false, 'health endpoint should report missing platform data sheet in local verify');
+  assert(result.body.facilitySourceReadable === false, 'health endpoint should report unreadable facility source in local verify');
+  assert(result.body.platformDataReadable === false, 'health endpoint should report unreadable platform storage in local verify');
+  assert(result.body.platformDataWritable === false, 'health endpoint should report unwritable platform storage in local verify');
+  assert(result.body.driveFolderWritable === false, 'health endpoint should report unwritable Drive folder in local verify');
+  assert(Array.isArray(result.body.missingPlatformTabs), 'health endpoint should include missing platform tabs');
 
   result = await request(baseUrl, '/auth/me');
   assert(result.response.status === 401, 'unauthenticated auth/me should return 401');

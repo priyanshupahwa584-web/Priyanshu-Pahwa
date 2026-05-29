@@ -59,7 +59,7 @@ importsRouter.post('/', authRequired, requireAccess('imports'), upload.single('f
       }]);
       return res.status(400).json({ message: 'Import validation failed.', errors: validation.errors });
     }
-    const driveFile = await uploadFileToDrive({ filePath: req.file.path, fileName: req.file.originalname, mimeType: req.file.mimetype });
+    const driveFile = await uploadFileToDrive({ filePath: req.file.path, fileName: req.file.originalname, mimeType: req.file.mimetype, folderName: 'Metro Uploads' });
     const createdAt = nowIso();
     const records = validation.rows.map((row) => ({ id: id('op'), ...row, createdAt, updatedAt: createdAt, createdBy: req.user.username }));
     await appendRows(tabs.operations, records);

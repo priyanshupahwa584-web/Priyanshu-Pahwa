@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config, facilitySourceConfigError, facilitySourceConfigured } from '../config.js';
 import { getSheetsClient } from './googleClient.js';
 
 export const masterOperationsSheet = 'Sort 2026- Jan 01- Dec 31st';
@@ -14,6 +14,16 @@ const facilityColumnLetters = [
 
 function quoteSheetName(name) {
   return `'${String(name).replace(/'/g, "''")}'`;
+}
+
+function facilitySourceSpreadsheetId() {
+  if (!facilitySourceConfigured()) {
+    const error = new Error(facilitySourceConfigError() || 'Facility Operations source is not configured.');
+    error.statusCode = 503;
+    error.code = 'facility_source_missing';
+    throw error;
+  }
+  return config.google.facilitySourceSheetId;
 }
 
 function parseCount(value) {
@@ -111,12 +121,24 @@ function topByValue(entries, limit) {
 export async function readMasterFacilityRows() {
   const sheets = getSheetsClient();
   const range = `${quoteSheetName(masterOperationsSheet)}!A${sourceStartRow}:AH`;
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: config.google.sheetId,
-    range,
-    valueRenderOption: 'FORMATTED_VALUE',
-    dateTimeRenderOption: 'FORMATTED_STRING'
-  });
+  let response;
+  try {
+    response = await sheets.spreadsheets.values.get({
+      spreadsheetId: facilitySourceSpreadsheetId(),
+      range,
+      valueRenderOption: 'FORMATTED_VALUE',
+      dateTimeRenderOption: 'FORMATTED_STRING'
+    });
+  } catch (error) {
+    const upstreamStatus = Number(error?.code || error?.response?.status || 0);
+    const wrapped = new Error(upstreamStatus === 404
+      ? `Facility Operations source tab was not found: ${masterOperationsSheet}.`
+      : upstreamStatus === 401 || upstreamStatus === 403
+        ? 'Facility Operations source permission is blocked. Share the source spreadsheet with the service account as a viewer.'
+        : error.message || 'Facility Operations source could not be read.');
+    wrapped.statusCode = 503;
+    throw wrapped;
+  }
   const rows = response.data.values || [];
   const headerRow = rows[0] || [];
   const facilityHeaders = facilityColumnLetters.map((letter, index) => {
@@ -141,6 +163,27 @@ export async function readMasterFacilityRows() {
     });
   });
   return { records, facilities: facilityHeaders.filter(Boolean), sourceSheet: masterOperationsSheet };
+}
+
+export async function readFacilityOperationRows() {
+  const { records, facilities } = await readMasterFacilityRows();
+  return {
+    rows: records.map((row) => ({
+      id: row.id,
+      date: row.date,
+      facility: row.facility,
+      pieces: row.count,
+      throughput: '',
+      productivity: '',
+      cycleTime: '',
+      status: 'Source',
+      notes: `Facility Operations source row ${row.sourceRow}, column ${row.column}`,
+      createdAt: '',
+      updatedAt: '',
+      createdBy: 'Facility Operations'
+    })),
+    facilities
+  };
 }
 
 export async function buildFacilityAnalytics(options = {}) {
