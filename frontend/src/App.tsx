@@ -11,6 +11,7 @@ const appVersion = 'v1.0.0';
 
 type IconName = 'grid' | 'data' | 'label' | 'report' | 'import' | 'export' | 'users' | 'activity' | 'printer' | 'settings';
 type NavItem = { key: SectionKey; label: string; path: string; icon: IconName; sidebar?: boolean; subtitle?: string };
+type HeatmapSelection = { facility: string; date: string } | null;
 
 const navItems: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: 'grid', subtitle: 'Live facility volume, trends, and performance movement.' },
@@ -289,11 +290,19 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
   }, [location.pathname]);
 
   return (
-    <div className={`app-shell min-h-screen bg-[#f6f4ef] ${sidebarCollapsed ? 'app-shell-collapsed' : ''}`}>
+    <div className={`app-shell min-h-screen bg-[#f6f4ef] lg:h-screen lg:overflow-hidden ${sidebarCollapsed ? 'app-shell-collapsed' : ''}`}>
       {mobileSidebarOpen && <button aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/45 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />}
       <aside className={`sidebar fixed inset-y-0 left-0 z-40 flex w-[292px] -translate-x-full flex-col bg-broad-navy px-5 py-5 text-white shadow-2xl transition duration-200 lg:sticky lg:top-0 lg:min-h-screen lg:translate-x-0 lg:shadow-none ${mobileSidebarOpen ? 'translate-x-0' : ''} ${sidebarCollapsed ? 'lg:w-[88px] lg:px-4' : ''}`}>
-        <div className={`mb-6 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+        <div className={`mb-5 flex items-center gap-3 ${sidebarCollapsed ? 'flex-col justify-center' : 'justify-between'}`}>
           <img src={showSidebarLabels ? '/icons/app-logo.png' : '/icons/app-icon.png'} alt="Broad Reach" className={showSidebarLabels ? 'w-56 max-w-[190px]' : 'h-11 w-11 rounded-xl object-contain'} />
+          <button
+            aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            className="sidebar-collapse-icon hidden lg:inline-grid"
+            title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            onClick={() => setSidebarCollapsed((value) => !value)}
+          >
+            <ChevronIcon collapsed={sidebarCollapsed} />
+          </button>
           <button aria-label="Close navigation" className="sidebar-icon-button lg:hidden" onClick={() => setMobileSidebarOpen(false)}>
             <CloseIcon />
           </button>
@@ -313,13 +322,9 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
             </NavLink>
           ))}
         </nav>
-        <button aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} className={`sidebar-collapse-button mt-auto hidden lg:flex ${sidebarCollapsed ? 'justify-center px-2' : ''}`} onClick={() => setSidebarCollapsed((value) => !value)}>
-          <ChevronIcon collapsed={sidebarCollapsed} />
-          {!sidebarCollapsed && <span>{sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>}
-        </button>
       </aside>
-      <main className="min-w-0">
-        <header className="sticky top-0 z-20 flex flex-col gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:flex-row md:items-center md:justify-between lg:px-6">
+      <main className="min-w-0 lg:min-h-0 lg:overflow-y-auto">
+        <header className="sticky top-0 z-20 flex flex-col gap-3 border-b border-slate-200 bg-white/95 px-4 py-2.5 backdrop-blur md:flex-row md:items-center md:justify-between lg:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <button aria-label="Open navigation" className="sidebar-icon-button border-slate-200 bg-white text-slate-800 lg:hidden" onClick={() => setMobileSidebarOpen(true)}>
               <MenuIcon />
@@ -339,7 +344,7 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
           </div>
         </header>
         {notice && <div className="fixed right-6 top-24 z-50 w-96 max-w-[calc(100vw-48px)]"><NoticeBanner notice={notice} /></div>}
-        <div className="p-5 lg:p-7">{children}</div>
+        <div className="p-3 sm:p-4 lg:p-5 xl:p-6">{children}</div>
       </main>
     </div>
   );
@@ -407,7 +412,40 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
   const analytics = useFacilityAnalytics(showNotice, { duration: '30D', aggregation: 'Daily' });
   const { data, busy, duration, setDuration, aggregation, setAggregation, selectedFacilities, setSelectedFacilities, load } = analytics;
   const [chartType, setChartType] = useState('Line');
-  const lineData = useChartWindow(data?.lineSeries || [], duration);
+  const [heatmapSelection, setHeatmapSelection] = useState<HeatmapSelection>(null);
+  const chartSeries = useMemo(() => {
+    if (!data?.lineSeries) return [];
+    if (!heatmapSelection) return data.lineSeries;
+    return data.lineSeries.filter((point) => String(point.date) === heatmapSelection.date);
+  }, [data, heatmapSelection]);
+  const chartFacilities = heatmapSelection ? [heatmapSelection.facility] : selectedFacilities;
+  const focusedBarSeries = useMemo(() => {
+    if (!data) return [];
+    if (!heatmapSelection || !chartSeries[0]) return data.barSeries;
+    return [{
+      period: heatmapSelection.date,
+      facility: heatmapSelection.facility,
+      total: Number(chartSeries[0][heatmapSelection.facility] || 0)
+    }];
+  }, [data, heatmapSelection, chartSeries]);
+  const focusedPieSeries = useMemo(() => {
+    if (!data) return [];
+    if (!heatmapSelection || !chartSeries[0]) return data.pieSeries;
+    return [{
+      facility: heatmapSelection.facility,
+      total: Number(chartSeries[0][heatmapSelection.facility] || 0),
+      percent: 100
+    }];
+  }, [data, heatmapSelection, chartSeries]);
+  const setFacilities = (facilities: string[]) => {
+    setHeatmapSelection(null);
+    setSelectedFacilities(facilities);
+  };
+  const selectHeatmapCell = (selection: Exclude<HeatmapSelection, null>) => {
+    setHeatmapSelection(selection);
+    setSelectedFacilities([selection.facility]);
+  };
+  const lineData = useChartWindow(chartSeries, `${duration}-${heatmapSelection?.date || 'all'}`);
   return (
     <PageStack>
       <PhaseHeader
@@ -424,8 +462,16 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
         aggregation={aggregation}
         setAggregation={setAggregation}
         selectedFacilities={selectedFacilities}
-        setSelectedFacilities={setSelectedFacilities}
+        setSelectedFacilities={setFacilities}
       />
+      {heatmapSelection && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
+          <div className="text-sm font-bold text-slate-700">
+            Focused on <span className="text-slate-950">{heatmapSelection.facility}</span> for <span className="text-slate-950">{formatShortDate(heatmapSelection.date)}</span>
+          </div>
+          <button className="button button-subtle" onClick={() => { setHeatmapSelection(null); setSelectedFacilities([]); }}>Clear focus</button>
+        </div>
+      )}
       <div className="card flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Chart view</div>
@@ -435,20 +481,22 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
       </div>
       {busy && !data ? <DashboardSkeleton /> : data ? (
         <div className="grid gap-5">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.75fr)]">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.85fr)_minmax(360px,1fr)] 2xl:grid-cols-[minmax(0,2.1fr)_minmax(420px,1fr)]">
             <div className="min-w-0">
-              {chartType === 'Line' && <FacilityLineChart title="Facility Trend Comparison" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} compareMode />}
-              {chartType === 'Bar' && <FacilityBarChart data={data.barSeries} />}
-              {chartType === 'Pie' && <FacilityPieChart data={data.pieSeries} />}
+              {chartType === 'Line' && <FacilityLineChart title="Facility Trend Comparison" data={lineData} facilities={chartFacilities} allFacilities={data.facilities} compareMode />}
+              {chartType === 'Bar' && <FacilityBarChart data={focusedBarSeries} />}
+              {chartType === 'Pie' && <FacilityPieChart data={focusedPieSeries} />}
             </div>
-            <FacilityHeatmap data={data.heatmap} />
+            <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} />
           </div>
-          <DataTable
-            title="Facility Ranking"
-            rows={data.facilityTotals}
-            columns={['facility', 'total']}
-            emptyText="No facility totals yet."
-          />
+          <div className="max-h-[330px] overflow-auto rounded-xl">
+            <DataTable
+              title="Facility Ranking"
+              rows={data.facilityTotals}
+              columns={['facility', 'total']}
+              emptyText="No facility totals yet."
+            />
+          </div>
         </div>
       ) : <EmptyState text="No facility data found. Check connection or adjust filters." actionLabel="Refresh" onAction={load} />}
     </PageStack>
@@ -559,19 +607,22 @@ function FacilityFilters({ data, duration, setDuration, aggregation, setAggregat
   compact?: boolean;
 }) {
   const [facilitySearch, setFacilitySearch] = useState('');
-  const topFacilities = (data?.facilityTotals || [])
-    .map((row) => row.facility)
+  const [facilityMenuOpen, setFacilityMenuOpen] = useState(false);
+  const facilities = data?.facilities || [];
+  const filteredFacilities = facilities
     .filter((facility) => facility.toLowerCase().includes(facilitySearch.trim().toLowerCase()))
-    .slice(0, compact ? 8 : 18);
+    .sort((a, b) => a.localeCompare(b));
+  const selectedCount = selectedFacilities.length;
+  const dropdownLabel = selectedCount ? `${selectedCount} selected` : 'All Facilities';
   const toggleFacility = (facility: string) => {
     setSelectedFacilities(selectedFacilities.includes(facility)
       ? selectedFacilities.filter((item) => item !== facility)
       : [...selectedFacilities, facility]);
   };
   return (
-    <div className="card p-4 lg:p-5">
-      <div className="flex flex-col gap-4">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+    <div className="card p-3.5 lg:p-4">
+      <div className="flex flex-col gap-3">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
           <div className="flex min-w-0 flex-col gap-2">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Range</span>
             <div className="overflow-x-auto pb-1">
@@ -587,20 +638,54 @@ function FacilityFilters({ data, duration, setDuration, aggregation, setAggregat
             </div>
           )}
         </div>
-        <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
-          <label className="label">
-            Facility filter
-            <input className="input" value={facilitySearch} onChange={(event) => setFacilitySearch(event.target.value)} placeholder="Search facility" />
-          </label>
+        <div className="grid gap-3 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] lg:items-start">
+          <div className="relative">
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-500">Facilities</span>
+            <button
+              className="facility-select-button"
+              type="button"
+              onClick={() => setFacilityMenuOpen((value) => !value)}
+              disabled={!facilities.length}
+            >
+              <span>{dropdownLabel}</span>
+              <span className="facility-count-badge">{selectedCount || facilities.length}</span>
+            </button>
+            {facilityMenuOpen && (
+              <div className="facility-menu">
+                <div className="flex items-center justify-between gap-2 border-b border-stone-200 p-3">
+                  <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Choose facilities</div>
+                  <button className="text-xs font-black text-slate-500 hover:text-slate-950" type="button" onClick={() => setFacilityMenuOpen(false)}>Close</button>
+                </div>
+                <div className="grid gap-2 p-3">
+                  <input className="input" value={facilitySearch} onChange={(event) => setFacilitySearch(event.target.value)} placeholder="Search eBay, SLC/BUF, ASUK..." />
+                  <div className="flex flex-wrap gap-2">
+                    <button className="button button-subtle px-3 py-1.5 text-xs" type="button" onClick={() => setSelectedFacilities([])}>Select All</button>
+                    <button className="button button-subtle px-3 py-1.5 text-xs" type="button" onClick={() => setSelectedFacilities([])}>Clear</button>
+                  </div>
+                </div>
+                <div className="max-h-72 overflow-y-auto px-2 pb-2">
+                  {filteredFacilities.map((facility) => (
+                    <button key={facility} className="facility-option" type="button" onClick={() => toggleFacility(facility)}>
+                      <input readOnly type="checkbox" checked={!selectedFacilities.length || selectedFacilities.includes(facility)} />
+                      <span className="truncate">{facility}</span>
+                    </button>
+                  ))}
+                  {!filteredFacilities.length && <div className="px-3 py-5 text-center text-sm font-semibold text-slate-500">No matching facilities.</div>}
+                </div>
+              </div>
+            )}
+          </div>
           <div className="min-w-0">
-            <div className="facility-pill-row">
-              <button className={`filter-chip ${selectedFacilities.length === 0 ? 'filter-chip-active' : ''}`} onClick={() => setSelectedFacilities([])}>All</button>
-              {topFacilities.map((facility) => (
-                <button key={facility} className={`filter-chip ${selectedFacilities.includes(facility) ? 'filter-chip-active' : ''}`} onClick={() => toggleFacility(facility)} title={facility}>
-                  {facility}
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-500">Selected</span>
+            <div className="selected-facility-row">
+              {!selectedFacilities.length ? (
+                <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-black uppercase tracking-[0.1em] text-slate-500">All facilities included</span>
+              ) : selectedFacilities.map((facility) => (
+                <button key={facility} className="selected-facility-chip" type="button" onClick={() => toggleFacility(facility)} title={`Remove ${facility}`}>
+                  <span className="truncate">{facility}</span>
+                  <span aria-hidden="true">×</span>
                 </button>
               ))}
-              {!topFacilities.length && <span className="px-3 py-2 text-sm font-semibold text-slate-500">No matching facilities.</span>}
             </div>
           </div>
         </div>
@@ -645,7 +730,7 @@ function FacilityLineChart({ title, data, facilities, allFacilities, compareMode
         </div>
       </div>
       <div
-        className="mt-5 h-[480px] min-h-[340px] cursor-grab select-none active:cursor-grabbing max-sm:h-[360px]"
+        className="mt-4 h-[46vh] min-h-[320px] max-h-[560px] cursor-grab select-none active:cursor-grabbing max-sm:h-[360px]"
         onDoubleClick={data.reset}
         onMouseDown={(event) => setDragStart(event.clientX)}
         onMouseLeave={() => setDragStart(null)}
@@ -712,7 +797,7 @@ function FacilityBarChart({ data }: { data: FacilityAnalytics['barSeries'] }) {
     <div className="card p-5">
       <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Totals</h3>
       <p className="mt-1 text-sm text-slate-500">Sorted high to low for the selected period.</p>
-      <div className="mt-5 h-[340px]">
+      <div className="mt-5 h-[42vh] min-h-[320px] max-h-[460px]">
         {data.length ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 18, right: 20, left: 0, bottom: 50 }}>
@@ -734,8 +819,8 @@ function FacilityPieChart({ data }: { data: FacilityAnalytics['pieSeries'] }) {
     <div className="card p-5">
       <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Share</h3>
       <p className="mt-1 text-sm text-slate-500">Share of total packages by facility.</p>
-      <div className="mt-5 grid gap-4 md:grid-cols-[1fr_0.85fr]">
-        <div className="h-[300px]">
+      <div className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="mx-auto h-[42vh] min-h-[340px] w-full max-w-[620px] max-h-[520px]">
           {data.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -760,31 +845,80 @@ function FacilityPieChart({ data }: { data: FacilityAnalytics['pieSeries'] }) {
   );
 }
 
-function FacilityHeatmap({ data }: { data: FacilityAnalytics['heatmap'] }) {
-  const max = Math.max(...data.flatMap((day) => day.values.map((item) => item.count)), 1);
+function FacilityHeatmap({ data, selected, onSelect }: { data: FacilityAnalytics; selected: HeatmapSelection; onSelect: (selection: Exclude<HeatmapSelection, null>) => void }) {
+  const facilities = data.facilities || [];
+  const rows = (data.lineSeries || []).map((point) => {
+    const values = facilities.map((facility) => ({ facility, count: Number(point[facility] || 0) }));
+    return {
+      date: String(point.date),
+      total: values.reduce((sum, item) => sum + item.count, 0),
+      values
+    };
+  });
+  const facilityTotals = facilities.map((facility) => ({
+    facility,
+    total: rows.reduce((sum, row) => sum + Number(row.values.find((item) => item.facility === facility)?.count || 0), 0)
+  }));
+  const rankMap = new Map(
+    [...facilityTotals]
+      .sort((a, b) => b.total - a.total)
+      .map((row, index) => [row.facility, index + 1])
+  );
+  const totalVolume = rows.reduce((sum, row) => sum + row.total, 0);
+  const max = Math.max(...rows.flatMap((day) => day.values.map((item) => item.count)), 1);
+  const gridTemplateColumns = `112px repeat(${Math.max(facilities.length, 1)}, minmax(86px, 1fr))`;
   return (
-    <div className="card p-5">
-      <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Heatmap</h3>
-      <p className="mt-1 text-sm text-slate-500">Recent intensity by day and facility.</p>
-      {data.length ? (
-        <div className="mt-5 overflow-x-auto">
-          <div className="grid min-w-[720px] gap-2">
-            {data.map((day) => (
-              <div key={day.date} className="grid grid-cols-[92px_repeat(8,minmax(58px,1fr))] gap-2">
-                <div className="text-xs font-black text-slate-500">{formatShortDate(day.date)}</div>
+    <div className="card min-w-0 p-4 lg:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Heatmap</h3>
+          <p className="mt-1 text-sm text-slate-500">Volume intensity by facility and day. Click a cell to focus the charts.</p>
+        </div>
+        <div className="heatmap-legend" aria-label="Facility ranking color legend">
+          <span>Lightest</span>
+          <span className="heatmap-legend-ramp" />
+          <span>Darkest</span>
+        </div>
+      </div>
+      {rows.length && facilities.length ? (
+        <div className="heatmap-scroll mt-4">
+          <div className="heatmap-grid" style={{ gridTemplateColumns }}>
+            <div className="heatmap-header heatmap-sticky-left">Date</div>
+            {facilities.map((facility) => (
+              <div key={facility} className="heatmap-header" title={facility}>{facility}</div>
+            ))}
+            {rows.map((day) => (
+              <div key={day.date} className="contents">
+                <div className="heatmap-date-cell heatmap-sticky-left">{formatShortDate(day.date)}</div>
                 {day.values.map((item) => {
-                  const opacity = Math.max(0.12, item.count / max);
+                  const opacity = item.count ? Math.min(0.92, 0.14 + (item.count / max) * 0.78) : 0.06;
+                  const percentage = totalVolume ? (item.count / totalVolume) * 100 : 0;
+                  const rank = rankMap.get(item.facility) || facilities.length;
+                  const isSelected = selected?.facility === item.facility && selected.date === day.date;
                   return (
-                    <div key={`${day.date}-${item.facility}`} title={`${item.facility}: ${number(item.count)}`} className="rounded-lg px-2 py-2 text-center text-[11px] font-black text-white" style={{ background: `rgba(23, 50, 77, ${opacity})` }}>
+                    <button
+                      key={`${day.date}-${item.facility}`}
+                      className={`heatmap-cell ${isSelected ? 'heatmap-cell-active' : ''}`}
+                      title={`Facility: ${item.facility}\nDate: ${formatShortDate(day.date)}\nPackage Count: ${number(item.count)}\nPercentage of total volume: ${formatPercent(percentage)}\nFacility rank: #${rank}`}
+                      style={{ background: `rgba(23, 50, 77, ${opacity})`, color: opacity > 0.42 ? '#ffffff' : '#172033' }}
+                      type="button"
+                      onClick={() => onSelect({ facility: item.facility, date: day.date })}
+                    >
                       {item.count ? compactNumber(item.count) : '-'}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             ))}
+            <div className="heatmap-total-label heatmap-sticky-left">Total</div>
+            {facilityTotals.map((item) => (
+              <div key={`total-${item.facility}`} className="heatmap-total-cell" title={`${item.facility} total: ${number(item.total)}`}>
+                {compactNumber(item.total)}
+              </div>
+            ))}
           </div>
         </div>
-      ) : <EmptyState text="No heatmap data yet." />}
+      ) : <EmptyState text="No facility data found. Check connection or adjust filters." />}
     </div>
   );
 }
@@ -1549,7 +1683,7 @@ function PermissionChecks({ sections, value, onChange, disabled }: { sections: s
 }
 
 function PageStack({ children }: { children: ReactNode }) {
-  return <div className="mx-auto grid max-w-[1760px] gap-6">{children}</div>;
+  return <div className="grid w-full min-w-0 gap-4 lg:gap-5">{children}</div>;
 }
 
 function PageHeader({ action }: { title: string; subtitle: string; action?: ReactNode }) {
@@ -1559,15 +1693,15 @@ function PageHeader({ action }: { title: string; subtitle: string; action?: Reac
 function Kpi({ label, value, helper, tone = 'slate', icon }: { label: string; value: string; helper?: string; tone?: 'slate' | 'teal' | 'amber' | 'red'; icon?: IconName }) {
   const accent = tone === 'teal' ? 'bg-cyan-50 text-broad-teal' : tone === 'amber' ? 'bg-amber-50 text-amber-700' : tone === 'red' ? 'bg-red-50 text-red-700' : 'bg-stone-100 text-slate-700';
   return (
-    <div className="card p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(46,38,26,0.1)]">
+    <div className="card p-4 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(46,38,26,0.1)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
-          <div className="mt-3 truncate text-2xl font-black text-slate-950 2xl:text-3xl">{value}</div>
+          <div className="mt-2 truncate text-2xl font-black text-slate-950 2xl:text-3xl">{value}</div>
         </div>
-        {icon && <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${accent}`}><NavIcon name={icon} /></div>}
+        {icon && <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${accent}`}><NavIcon name={icon} /></div>}
       </div>
-      {helper && <div className="mt-3 text-sm font-semibold text-slate-500">{helper}</div>}
+      {helper && <div className="mt-2 text-sm font-semibold text-slate-500">{helper}</div>}
     </div>
   );
 }
@@ -1748,6 +1882,11 @@ function signedNumber(value: unknown) {
   const parsed = Number(value || 0);
   if (!Number.isFinite(parsed) || parsed === 0) return '0';
   return `${parsed > 0 ? '+' : '-'}${Math.abs(parsed).toLocaleString()}`;
+}
+
+function formatPercent(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? `${parsed.toFixed(parsed >= 10 ? 1 : 2)}%` : '0%';
 }
 
 function formatShortDate(value: string) {

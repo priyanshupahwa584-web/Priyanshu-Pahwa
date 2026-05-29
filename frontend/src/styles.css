@@ -14,6 +14,7 @@
     background: #f6f4ef;
     color: #142033;
     font-family: theme('fontFamily.sans');
+    overflow-x: hidden;
   }
 }
 
@@ -73,6 +74,25 @@
 
 .sidebar-icon-button:hover {
   background: rgb(255 255 255 / 0.1);
+}
+
+.sidebar-collapse-icon {
+  height: 2.35rem;
+  width: 2.35rem;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.05));
+  color: rgb(226 232 240);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.18);
+  transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+
+.sidebar-collapse-icon:hover {
+  transform: translateY(-1px);
+  border-color: rgb(255 255 255 / 0.28);
+  background: rgb(255 255 255 / 0.14);
+  color: white;
 }
 
 .sidebar-collapse-button {
@@ -145,6 +165,34 @@
     @apply border-slate-900 bg-slate-950 text-white hover:border-slate-900 hover:bg-slate-900 hover:text-white;
   }
 
+  .facility-select-button {
+    @apply flex w-full items-center justify-between gap-3 rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-left text-sm font-black text-slate-800 shadow-sm transition hover:border-slate-600 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .facility-count-badge {
+    @apply inline-flex min-w-8 items-center justify-center rounded-full bg-slate-950 px-2 py-1 text-xs font-black text-white;
+  }
+
+  .facility-menu {
+    @apply absolute left-0 top-full z-40 mt-2 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)];
+  }
+
+  .facility-option {
+    @apply flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-700 transition hover:bg-stone-50 hover:text-slate-950;
+  }
+
+  .facility-option input {
+    @apply h-4 w-4 accent-slate-950;
+  }
+
+  .selected-facility-row {
+    @apply flex min-w-0 flex-wrap gap-2 rounded-xl border border-stone-200 bg-stone-50/70 p-2;
+  }
+
+  .selected-facility-chip {
+    @apply inline-flex max-w-full items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-black uppercase tracking-[0.08em] text-slate-700 shadow-sm transition hover:border-slate-600 hover:text-slate-950;
+  }
+
   .facility-pill-row {
     @apply flex min-w-0 gap-2 overflow-x-auto pb-1;
     scrollbar-width: thin;
@@ -174,6 +222,51 @@
 
   .chart-toolbar-button {
     @apply inline-flex h-9 min-w-9 shrink-0 items-center justify-center rounded-lg px-2 text-sm font-black text-slate-700 transition hover:bg-white hover:text-slate-950 hover:shadow-sm active:scale-95 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .heatmap-scroll {
+    @apply max-h-[52vh] overflow-auto rounded-xl border border-stone-200 bg-stone-50/70 p-2 xl:max-h-[560px];
+  }
+
+  .heatmap-grid {
+    @apply grid min-w-max gap-1.5;
+  }
+
+  .heatmap-header {
+    @apply sticky top-0 z-20 truncate rounded-lg border border-stone-200 bg-white px-2 py-2 text-center text-[11px] font-black uppercase tracking-[0.08em] text-slate-600 shadow-sm;
+  }
+
+  .heatmap-sticky-left {
+    @apply sticky left-0 z-30;
+  }
+
+  .heatmap-date-cell {
+    @apply rounded-lg border border-stone-200 bg-white px-2 py-2 text-xs font-black text-slate-600 shadow-sm;
+  }
+
+  .heatmap-cell {
+    @apply rounded-lg px-2 py-2 text-center text-[11px] font-black shadow-sm ring-1 ring-white/45 transition hover:scale-[1.03] hover:ring-2 hover:ring-slate-950/20;
+  }
+
+  .heatmap-cell-active {
+    @apply ring-2 ring-amber-500 ring-offset-2 ring-offset-white;
+  }
+
+  .heatmap-total-label {
+    @apply rounded-lg border border-stone-300 bg-slate-950 px-2 py-2 text-xs font-black uppercase tracking-[0.12em] text-white shadow-sm;
+  }
+
+  .heatmap-total-cell {
+    @apply rounded-lg border border-stone-300 bg-white px-2 py-2 text-center text-xs font-black text-slate-950 shadow-sm;
+  }
+
+  .heatmap-legend {
+    @apply flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500;
+  }
+
+  .heatmap-legend-ramp {
+    @apply h-2.5 w-20 rounded-full;
+    background: linear-gradient(90deg, rgba(23, 50, 77, 0.12), rgba(23, 50, 77, 0.92));
   }
 
   .skeleton-card {
