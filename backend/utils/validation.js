@@ -29,18 +29,48 @@ export const dataRowSchema = z.object({
   notes: z.string().trim().max(2000).optional().default('')
 });
 
+const userPasswordSchema = z.string().min(4).max(200);
+const userEmailSchema = z.string().trim().email().or(z.literal('')).optional().default('');
+
 export const userCreateSchema = z.object({
+  firstName: z.string().trim().max(80).optional().default(''),
+  lastName: z.string().trim().max(80).optional().default(''),
   username: z.string().trim().min(3).max(80),
-  displayName: z.string().trim().min(1).max(120),
-  password: z.string().min(4).max(200),
+  email: userEmailSchema,
+  displayName: z.string().trim().max(120).optional().default(''),
+  temporaryPassword: userPasswordSchema.optional(),
+  password: userPasswordSchema.optional(),
   role: z.enum(roles),
   active: z.boolean().default(true),
+  forcePasswordChange: z.boolean().default(true),
+  twoFactorRequired: z.boolean().default(false),
   permissions: z.array(z.enum(sections)).default([])
-});
+}).superRefine((data, ctx) => {
+  if (!data.temporaryPassword && !data.password) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['temporaryPassword'], message: 'Temporary password is required.' });
+  }
+}).transform((data) => ({
+  ...data,
+  password: data.temporaryPassword || data.password
+}));
 
-export const userUpdateSchema = userCreateSchema.extend({
-  password: z.string().min(4).max(200).optional().or(z.literal(''))
-});
+export const userUpdateSchema = z.object({
+  firstName: z.string().trim().max(80).optional().default(''),
+  lastName: z.string().trim().max(80).optional().default(''),
+  username: z.string().trim().min(3).max(80),
+  email: userEmailSchema,
+  displayName: z.string().trim().max(120).optional().default(''),
+  temporaryPassword: userPasswordSchema.optional().or(z.literal('')),
+  password: userPasswordSchema.optional().or(z.literal('')),
+  role: z.enum(roles),
+  active: z.boolean().default(true),
+  forcePasswordChange: z.boolean().default(false),
+  twoFactorRequired: z.boolean().default(false),
+  permissions: z.array(z.enum(sections)).default([])
+}).transform((data) => ({
+  ...data,
+  password: data.temporaryPassword || data.password || ''
+}));
 
 export const exportSchema = z.object({
   format: z.enum(['csv', 'xlsx', 'pdf']),

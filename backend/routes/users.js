@@ -1,7 +1,7 @@
 import express from 'express';
 import { authRequired, requireAccess, requireAdmin } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
-import { createUser, listUsers, resetUserTwoFactor, revokeUserSessions, unlockUser, updateUser } from '../services/authService.js';
+import { createUser, getUserSessions, listUsers, resetUserTwoFactor, revokeUserSessions, unlockUser, updateUser } from '../services/authService.js';
 import { roles, sections } from '../services/sheetSchema.js';
 import { userCreateSchema, userUpdateSchema } from '../utils/validation.js';
 
@@ -15,7 +15,7 @@ usersRouter.get('/', authRequired, requireAccess('users'), async (_req, res, nex
   }
 });
 
-usersRouter.post('/', authRequired, requireAccess('users'), async (req, res, next) => {
+usersRouter.post('/', authRequired, requireAdmin, async (req, res, next) => {
   try {
     const body = userCreateSchema.parse(req.body);
     const user = await createUser(body);
@@ -26,13 +26,26 @@ usersRouter.post('/', authRequired, requireAccess('users'), async (req, res, nex
   }
 });
 
-usersRouter.put('/:id', authRequired, requireAccess('users'), async (req, res, next) => {
+usersRouter.put('/:id', authRequired, requireAdmin, async (req, res, next) => {
   try {
     const body = userUpdateSchema.parse(req.body);
     const user = await updateUser(req.params.id, body);
     if (!user) return res.status(404).json({ message: 'User not found.' });
     await audit({ actor: req.user.username, action: 'user_updated', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '' });
+    if (body.password) {
+      await audit({ actor: req.user.username, action: 'password_reset', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '' });
+    }
     res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.get('/:id/sessions', authRequired, requireAdmin, async (req, res, next) => {
+  try {
+    const sessions = await getUserSessions(req.params.id);
+    if (!sessions) return res.status(404).json({ message: 'User not found.' });
+    res.json({ sessions });
   } catch (error) {
     next(error);
   }

@@ -22,6 +22,9 @@ export function normalizeLabelPayload(label = {}) {
     customerName: clean(label.customerName || label.customer || label.driver || ''),
     service: clean(label.service || label.city || ''),
     route: clean(label.route || label.routingSequence || label.stop || ''),
+    address: clean(label.address || label.deliveryAddress || ''),
+    city: clean(label.city || ''),
+    postalCode: clean(label.postalCode || label.postal || label.postcode || label.zip || ''),
     status: clean(label.status || 'Pending')
   };
 }
@@ -31,6 +34,7 @@ export function buildZplLabel(label = {}) {
   const customer = truncate(row.customerName, 34);
   const service = truncate(row.service, 28);
   const route = truncate(row.route, 20);
+  const address = truncate([row.address, row.city, row.postalCode].filter(Boolean).join(', ') || row.service, 36);
   return [
     '^XA',
     '^PW812',
@@ -49,7 +53,8 @@ export function buildZplLabel(label = {}) {
     '^FO72,186^A0N,38,34^FDRouting Seq:^FS',
     `^FO326,178^A0N,52,46^FD${zplText(route || 'N/A')}^FS`,
     '^FO74,258^A0N,34,30^FDService / Address:^FS',
-    `^FO326,256^A0N,34,30^FD${zplText(service || 'N/A')}^FS`,
+    `^FO326,248^A0N,24,22^FD${zplText(service || 'N/A')}^FS`,
+    `^FO326,276^A0N,24,22^FD${zplText(address || 'N/A')}^FS`,
     `^FO92,312^BCN,62,Y,N,N^FD${zplText(row.barcodeValue)}^FS`,
     '^XZ'
   ].join('\n');
@@ -87,7 +92,8 @@ export async function buildPdfLabel(label = {}) {
     doc.fontSize(12).text('Routing Seq:', 20, 70, { width: 76 });
     doc.fontSize(19).text(row.route || 'N/A', 106, 66, { width: 164, align: 'center' });
     doc.fontSize(10).text('Service / Address:', 16, 94, { width: 86 });
-    doc.fontSize(10).text(row.service || 'N/A', 106, 94, { width: 164, align: 'center' });
+    doc.fontSize(9).text(row.service || 'N/A', 106, 91, { width: 164, align: 'center' });
+    doc.fontSize(8).text([row.address, row.city, row.postalCode].filter(Boolean).join(', ') || 'N/A', 106, 103, { width: 164, align: 'center' });
     doc.image(barcodeBuffer, 74, 116, { width: 140, height: 16 });
     doc.font('Helvetica-Bold').fontSize(7).text(row.barcodeValue, 216, 119, { width: 58, align: 'center' });
     doc.end();

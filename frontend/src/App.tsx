@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, clearAccessToken, downloadExport, downloadFromApi, postJson, putJson, storeAccessToken } from './services/api';
@@ -17,7 +17,7 @@ const navItems: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: 'grid', subtitle: 'Live facility volume, trends, and performance movement.' },
   { key: 'data', label: 'Facility Operations', path: '/facility-operations', icon: 'data', subtitle: 'Live facility volume, trends, and performance movement.' },
   { key: 'activity', label: 'Executive Summary', path: '/executive-summary', icon: 'report', subtitle: 'Leadership view of performance, peaks, and facility movement.' },
-  { key: 'metro-labeling', label: 'Metro Labeling', path: '/metro-labeling', icon: 'label', sidebar: false, subtitle: 'Upload, search, preview, and print Metro labels.' },
+  { key: 'metro-labeling', label: 'Metro Labeling', path: '/metro-labeling', icon: 'label', subtitle: 'Upload, search, preview, and print Metro labels.' },
   { key: 'fulfilment', label: 'Fulfilment Reports', path: '/fulfilment-reports', icon: 'report', sidebar: false, subtitle: 'Generate and export completion reports.' },
   { key: 'users', label: 'Users', path: '/users', icon: 'users', subtitle: 'Manage team access and roles.' },
   { key: 'activity', label: 'Activity Logs', path: '/activity', icon: 'activity', sidebar: false, subtitle: 'Review system activity and print history.' },
@@ -59,6 +59,14 @@ const sectionLabels: Partial<Record<SectionKey, string>> = {
 function canAccess(user: User, section: SectionKey) {
   if (section === 'security') return true;
   return user.role === 'Admin' || user.permissions.includes(section);
+}
+
+function defaultPermissionsForRole(role: string): SectionKey[] {
+  if (role === 'Admin') return ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'settings', 'security'];
+  if (role === 'Manager') return ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'security'];
+  if (role === 'Supervisor') return ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'activity', 'printer-setup', 'security'];
+  if (role === 'Viewer') return ['dashboard', 'data', 'activity', 'security'];
+  return ['dashboard', 'metro-labeling', 'printer-setup', 'security'];
 }
 
 export default function App() {
@@ -132,7 +140,7 @@ export default function App() {
         <Route path="/facility-analytics" element={<Navigate to="/facility-operations" replace />} />
         <Route path="/executive-summary" element={<Guard user={user} section="activity"><ExecutiveSummaryPage showNotice={showNotice} /></Guard>} />
         <Route path="/data" element={<Navigate to="/facility-operations" replace />} />
-        <Route path="/metro-labeling" element={<Guard user={user} section="metro-labeling"><MetroLabelingPage showNotice={showNotice} /></Guard>} />
+        <Route path="/metro-labeling" element={<Guard user={user} section="metro-labeling"><MetroLabelingPage user={user} showNotice={showNotice} /></Guard>} />
         <Route path="/fulfilment-reports" element={<Guard user={user} section="fulfilment"><FulfilmentReportsPage showNotice={showNotice} /></Guard>} />
         <Route path="/imports" element={<Guard user={user} section="imports"><ImportsPage showNotice={showNotice} /></Guard>} />
         <Route path="/exports" element={<Guard user={user} section="exports"><ExportsPage showNotice={showNotice} /></Guard>} />
@@ -372,28 +380,28 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
           ))}
         </nav>
       </aside>
-      <main className="min-w-0 lg:min-h-0 lg:overflow-y-auto">
-        <header className="sticky top-0 z-20 flex flex-col gap-3 border-b border-slate-200 bg-white/95 px-4 py-2.5 backdrop-blur md:flex-row md:items-center md:justify-between lg:px-5">
+      <main className="min-w-0 max-w-full overflow-x-hidden lg:min-h-0 lg:overflow-y-auto">
+        <header className="mobile-topbar sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-4 lg:px-5">
           <div className="flex min-w-0 items-center gap-3">
-            <button aria-label="Open navigation" className="sidebar-icon-button border-slate-200 bg-white text-slate-800 lg:hidden" onClick={() => setMobileSidebarOpen(true)}>
+            <button aria-label="Open navigation" className="sidebar-icon-button mobile-menu-button border-slate-200 bg-white text-slate-800 lg:hidden" onClick={() => setMobileSidebarOpen(true)}>
               <MenuIcon />
             </button>
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-bold text-slate-950 sm:text-2xl"><span className="sm:hidden">{mobileTitle}</span><span className="hidden sm:inline">{current.label}</span></h1>
+              <h1 className="truncate text-lg font-bold text-slate-950 sm:text-2xl"><span className="sm:hidden">{mobileTitle}</span><span className="hidden sm:inline">{current.label}</span></h1>
               <p className="hidden truncate text-sm text-slate-500 sm:block">{subtitle}</p>
             </div>
           </div>
-          <div className="flex items-center justify-between gap-3 md:justify-end">
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-broad-navy font-bold text-white">{user.displayName?.[0] || user.username[0]}</div>
+          <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-3">
+            <div className="grid h-8 w-8 place-items-center rounded-full bg-broad-navy text-sm font-bold text-white sm:h-10 sm:w-10 sm:text-base">{user.displayName?.[0] || user.username[0]}</div>
             <div className="hidden min-w-0 sm:block">
               <div className="text-sm font-bold">{user.displayName}</div>
               <div className="text-xs text-slate-500">{user.role}</div>
             </div>
-            <button className="button px-3 py-2 text-xs sm:px-4 sm:text-sm" onClick={() => logout()}>Logout</button>
+            <button className="button px-2.5 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm" onClick={() => logout()}>Logout</button>
           </div>
         </header>
         {notice && <div className="fixed right-6 top-24 z-50 w-96 max-w-[calc(100vw-48px)]"><NoticeBanner notice={notice} /></div>}
-        <div className="p-3 sm:p-4 lg:p-5 xl:p-6">{children}</div>
+        <div className="max-w-full overflow-x-hidden p-2.5 sm:p-4 lg:p-5 xl:p-6">{children}</div>
       </main>
     </div>
   );
@@ -504,6 +512,11 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
     setSelectedFacilities([selection.facility]);
   };
   const lineData = useChartWindow(chartSeries, `${duration}-${heatmapSelection?.date || 'all'}`);
+  const rankingRows = useMemo(() => (data?.facilityTotals || []).map((row, index) => ({
+    ...row,
+    rank: index + 1,
+    totalPackages: row.total
+  })), [data]);
   const renderControls = () => data ? (
     <>
       <FacilityFilters
@@ -555,14 +568,7 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
               onExpand={() => setFullscreenView('chart')}
             />
             <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} onExpand={() => setFullscreenView('heatmap')} />
-            <div className="max-h-[360px] overflow-auto rounded-xl">
-              <DataTable
-                title="Facility Ranking"
-                rows={data.facilityTotals}
-                columns={['facility', 'total']}
-                emptyText="No facility totals yet."
-              />
-            </div>
+            <FacilityRanking rows={rankingRows} />
           </div>
           <div className="facility-desktop-layout">
             <FacilityKpis data={data} />
@@ -581,14 +587,7 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
               </div>
               <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} onExpand={() => setFullscreenView('heatmap')} />
             </div>
-            <div className="max-h-[330px] overflow-auto rounded-xl">
-              <DataTable
-                title="Facility Ranking"
-                rows={data.facilityTotals}
-                columns={['facility', 'total']}
-                emptyText="No facility totals yet."
-              />
-            </div>
+            <FacilityRanking rows={rankingRows} />
           </div>
           <FullscreenModal
             open={Boolean(fullscreenView)}
@@ -644,6 +643,33 @@ function FacilityChartView({ chartType, lineData, facilities, allFacilities, bar
       {chartType === 'Bar' && <FacilityBarChart data={barSeries} fullscreen={fullscreen} onExpand={onExpand} />}
       {chartType === 'Pie' && <FacilityPieChart data={pieSeries} fullscreen={fullscreen} onExpand={onExpand} />}
     </>
+  );
+}
+
+function FacilityRanking({ rows }: { rows: Array<{ facility: string; total: number; totalPackages: number; rank: number }> }) {
+  return (
+    <div className="card min-w-0 overflow-hidden">
+      <div className="border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
+        <h3 className="font-bold text-slate-950">Facility Ranking</h3>
+      </div>
+      <div className="grid gap-2 p-3 md:hidden">
+        {rows.length ? rows.map((row) => (
+          <div key={row.facility} className="rounded-xl border border-stone-200 bg-stone-50/80 p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-black text-slate-950">{row.facility}</div>
+                <div className="mt-1 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Total Packages</div>
+                <div className="text-lg font-black text-slate-900">{number(row.totalPackages)}</div>
+              </div>
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-950 text-sm font-black text-white">#{row.rank}</div>
+            </div>
+          </div>
+        )) : <EmptyState text="No facility totals yet." />}
+      </div>
+      <div className="hidden max-h-[330px] overflow-auto md:block">
+        <DataTable title="" rows={rows} columns={['facility', 'totalPackages', 'rank']} emptyText="No facility totals yet." />
+      </div>
+    </div>
   );
 }
 
@@ -708,7 +734,7 @@ function ExecutiveSummaryPage({ showNotice }: { showNotice: (type: NoticeType, t
       <Segmented value={duration} options={durationOptions} onChange={setDuration} />
       {busy && !data ? <DashboardSkeleton /> : data ? (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-2.5 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
             <InsightCard label="Strongest Facility" value={data.kpis.bestFacility?.facility || 'N/A'} detail={data.kpis.bestFacility ? `${number(data.kpis.bestFacility.total)} packages` : 'No leader yet'} />
             <InsightCard label="Lowest Facility" value={data.kpis.worstFacility?.facility || 'N/A'} detail={data.kpis.worstFacility ? `${number(data.kpis.worstFacility.total)} packages` : 'No low point yet'} tone="amber" />
             <InsightCard label="Highest Volume Day" value={data.kpis.peakDay ? formatShortDate(data.kpis.peakDay.date) : 'N/A'} detail={data.kpis.peakDay ? `${number(data.kpis.peakDay.total)} packages` : 'No peak day yet'} />
@@ -768,7 +794,7 @@ function PhaseHeader({ meta, action }: { title: string; subtitle: string; meta?:
 
 function FacilityKpis({ data }: { data: FacilityAnalytics }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+    <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-6">
       <Kpi label="Total Packages" value={number(data.kpis.totalPackages)} icon="data" tone="teal" />
       <Kpi label="Active Facilities" value={number(data.kpis.activeFacilities)} helper={`${number(data.facilities.length)} tracked`} icon="grid" />
       <Kpi label="Top Facility" value={data.kpis.bestFacility?.facility || 'N/A'} helper={data.kpis.bestFacility ? `${number(data.kpis.bestFacility.total)} packages` : undefined} icon="report" />
@@ -866,7 +892,7 @@ function FacilityFilters({ data, duration, setDuration, aggregation, setAggregat
               ) : selectedFacilities.map((facility) => (
                 <button key={facility} className="selected-facility-chip" type="button" onClick={() => toggleFacility(facility)} title={`Remove ${facility}`}>
                   <span className="truncate">{facility}</span>
-                  <span aria-hidden="true">×</span>
+                  <span aria-hidden="true">x</span>
                 </button>
               ))}
             </div>
@@ -900,25 +926,25 @@ function FacilityLineChart({ title, data, facilities, allFacilities, compareMode
     setDragStart(null);
   };
   return (
-    <div className="card p-5 lg:p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="card min-w-0 p-3.5 sm:p-5 lg:p-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">{title}</h3>
-          <p className="mt-1 text-sm text-slate-500">Explore pace, movement, and rolling trend across the selected window.</p>
+          <h3 className="text-sm font-black uppercase tracking-[0.1em] text-slate-950 sm:text-base sm:tracking-[0.12em]">{title}</h3>
+          <p className="mt-1 hidden text-sm text-slate-500 sm:block">Explore pace, movement, and rolling trend across the selected window.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {onExpand && <button className="expand-button" onClick={onExpand} title="Expand chart">Expand</button>}
           <div className="chart-toolbar" aria-label="Chart controls">
             <button className="chart-toolbar-button" onClick={data.zoomIn} title="Zoom in">+</button>
             <button className="chart-toolbar-button" onClick={data.zoomOut} title="Zoom out">-</button>
-            <button className="chart-toolbar-button" onClick={data.panLeft} title="Pan left">←</button>
-            <button className="chart-toolbar-button" onClick={data.panRight} title="Pan right">→</button>
+            <button className="chart-toolbar-button" onClick={data.panLeft} title="Pan left">&lt;</button>
+            <button className="chart-toolbar-button" onClick={data.panRight} title="Pan right">&gt;</button>
             <button className="chart-toolbar-button min-w-16 px-3" onClick={data.reset} title="Reset zoom">Reset</button>
           </div>
         </div>
       </div>
       <div
-        className={`mt-4 cursor-grab select-none active:cursor-grabbing ${fullscreen ? 'h-[calc(100vh-265px)] min-h-[420px]' : 'h-[46vh] min-h-[300px] max-h-[560px] max-sm:h-[320px]'}`}
+        className={`mt-4 cursor-grab select-none active:cursor-grabbing ${fullscreen ? 'h-[calc(100dvh-230px)] min-h-[320px] sm:h-[calc(100vh-265px)] sm:min-h-[420px]' : 'h-[46vh] min-h-[280px] max-h-[560px] max-sm:h-[300px]'}`}
         onDoubleClick={data.reset}
         onMouseDown={(event) => setDragStart(event.clientX)}
         onMouseLeave={() => setDragStart(null)}
@@ -982,15 +1008,15 @@ function FacilityTooltip({ active, payload, label }: { active?: boolean; payload
 
 function FacilityBarChart({ data, fullscreen = false, onExpand }: { data: FacilityAnalytics['barSeries']; fullscreen?: boolean; onExpand?: () => void }) {
   return (
-    <div className="card p-5">
+    <div className="card min-w-0 p-3.5 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Totals</h3>
-          <p className="mt-1 text-sm text-slate-500">Sorted high to low for the selected period.</p>
+          <h3 className="text-sm font-black uppercase tracking-[0.1em] text-slate-950 sm:text-base sm:tracking-[0.12em]">Facility Totals</h3>
+          <p className="mt-1 hidden text-sm text-slate-500 sm:block">Sorted high to low for the selected period.</p>
         </div>
         {onExpand && <button className="expand-button" onClick={onExpand} title="Expand chart">Expand</button>}
       </div>
-      <div className={`mt-5 ${fullscreen ? 'h-[calc(100vh-265px)] min-h-[420px]' : 'h-[42vh] min-h-[300px] max-h-[460px]'}`}>
+      <div className={`mt-5 ${fullscreen ? 'h-[calc(100dvh-230px)] min-h-[320px] sm:h-[calc(100vh-265px)] sm:min-h-[420px]' : 'h-[42vh] min-h-[280px] max-h-[460px]'}`}>
         {data.length ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 18, right: 20, left: 0, bottom: 50 }}>
@@ -1009,16 +1035,16 @@ function FacilityBarChart({ data, fullscreen = false, onExpand }: { data: Facili
 
 function FacilityPieChart({ data, fullscreen = false, onExpand }: { data: FacilityAnalytics['pieSeries']; fullscreen?: boolean; onExpand?: () => void }) {
   return (
-    <div className="card p-5">
+    <div className="card min-w-0 p-3.5 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Share</h3>
-          <p className="mt-1 text-sm text-slate-500">Share of total packages by facility.</p>
+          <h3 className="text-sm font-black uppercase tracking-[0.1em] text-slate-950 sm:text-base sm:tracking-[0.12em]">Facility Share</h3>
+          <p className="mt-1 hidden text-sm text-slate-500 sm:block">Share of total packages by facility.</p>
         </div>
         {onExpand && <button className="expand-button" onClick={onExpand} title="Expand chart">Expand</button>}
       </div>
       <div className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className={`mx-auto w-full max-w-[720px] ${fullscreen ? 'h-[calc(100vh-300px)] min-h-[420px]' : 'h-[42vh] min-h-[320px] max-h-[520px]'}`}>
+        <div className={`mx-auto w-full max-w-[720px] ${fullscreen ? 'h-[calc(100dvh-260px)] min-h-[320px] sm:h-[calc(100vh-300px)] sm:min-h-[420px]' : 'h-[42vh] min-h-[300px] max-h-[520px]'}`}>
           {data.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -1064,13 +1090,15 @@ function FacilityHeatmap({ data, selected, onSelect, fullscreen = false, onExpan
   );
   const totalVolume = rows.reduce((sum, row) => sum + row.total, 0);
   const max = Math.max(...rows.flatMap((day) => day.values.map((item) => item.count)), 1);
-  const gridTemplateColumns = `112px repeat(${Math.max(facilities.length, 1)}, minmax(86px, 1fr))`;
+  const heatmapGridStyle = {
+    gridTemplateColumns: `var(--heatmap-date-width, 112px) repeat(${Math.max(facilities.length, 1)}, minmax(var(--heatmap-cell-width, 86px), 1fr))`
+  } as CSSProperties;
   return (
-    <div className="card min-w-0 p-4 lg:p-5">
+    <div className={`card facility-heatmap-card min-w-0 p-3 sm:p-4 lg:p-5 ${fullscreen ? 'facility-heatmap-fullscreen' : ''}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">Facility Heatmap</h3>
-          <p className="mt-1 text-sm text-slate-500">Volume intensity by facility and day. Click a cell to focus the charts.</p>
+          <p className="mt-1 hidden text-sm text-slate-500 sm:block">Volume intensity by facility and day. Click a cell to focus the charts.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="heatmap-legend" aria-label="Facility ranking color legend">
@@ -1082,8 +1110,8 @@ function FacilityHeatmap({ data, selected, onSelect, fullscreen = false, onExpan
         </div>
       </div>
       {rows.length && facilities.length ? (
-        <div className={`heatmap-scroll mt-4 ${fullscreen ? 'heatmap-scroll-fullscreen' : ''}`}>
-          <div className="heatmap-grid" style={{ gridTemplateColumns }}>
+        <div className={`heatmap-scroll mt-3 sm:mt-4 ${fullscreen ? 'heatmap-scroll-fullscreen' : ''}`}>
+          <div className="heatmap-grid" style={heatmapGridStyle}>
             <div className="heatmap-header heatmap-sticky-left">Date</div>
             {facilities.map((facility) => (
               <div key={facility} className="heatmap-header" title={facility}>{facility}</div>
@@ -1135,8 +1163,9 @@ function DashboardSkeleton() {
   );
 }
 
-function MetroLabelingPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
+function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type: NoticeType, text: string) => void }) {
   const [rows, setRows] = useState<MetroLabelRow[]>([]);
+  const [printLogs, setPrintLogs] = useState<any[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -1144,11 +1173,16 @@ function MetroLabelingPage({ showNotice }: { showNotice: (type: NoticeType, text
   const [preview, setPreview] = useState<MetroLabelRow | null>(null);
   const [busy, setBusy] = useState(false);
   const printerName = getDefaultPrinter();
+  const canUpload = ['Admin', 'Manager', 'Supervisor'].includes(user.role);
   const query = useMemo(() => new URLSearchParams(Object.entries({ search, status }).filter(([, value]) => value)).toString(), [search, status]);
 
   const load = async () => {
-    const response = await api<{ rows: MetroLabelRow[] }>(`/labels?${query}`);
+    const [response, logs] = await Promise.all([
+      api<{ rows: MetroLabelRow[] }>(`/labels?${query}`),
+      api<{ rows: any[] }>('/labels/logs').catch(() => ({ rows: [] }))
+    ]);
     setRows(response.rows);
+    setPrintLogs(logs.rows || []);
     setPreview((current) => current || response.rows[0] || null);
   };
 
@@ -1163,6 +1197,7 @@ function MetroLabelingPage({ showNotice }: { showNotice: (type: NoticeType, text
       const response = await api<{ importedRows: number }>('/labels/upload', { method: 'POST', body: form });
       showNotice('success', `${response.importedRows} Metro label rows imported.`);
       setSelected([]);
+      setFile(null);
       await load();
     } catch (error: any) {
       showNotice('error', error.message);
@@ -1209,29 +1244,41 @@ function MetroLabelingPage({ showNotice }: { showNotice: (type: NoticeType, text
         subtitle="Upload, search, preview, and print Metro labels."
         action={<button className="button" onClick={() => load().catch((error) => showNotice('error', error.message))}>Refresh</button>}
       />
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="card p-5">
-          <h3 className="mb-4 font-black text-slate-950">Label File Import</h3>
-          <div className="flex flex-col gap-3 md:flex-row">
-            <input className="input" type="file" accept=".csv,.xlsx,.xlsm,.json" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-            <button className="button button-primary whitespace-nowrap" disabled={busy} onClick={upload}>{busy ? 'Working...' : 'Upload Label File'}</button>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
+        <div className="card p-4 sm:p-5">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="font-black text-slate-950">{canUpload ? 'Label File Import' : 'Metro Print Queue'}</h3>
+              <p className="mt-1 text-sm text-slate-500">{canUpload ? 'Upload Metro label rows, then search and print from the queue.' : 'Search, preview, and print approved Metro label rows.'}</p>
+            </div>
+            <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-slate-600">{rows.length} rows</span>
           </div>
-          <p className="mt-3 text-sm text-slate-500">Use a Metro label file with tracking, driver, route, address, city, and postal code columns.</p>
+          {canUpload && (
+            <div className="mt-4 flex flex-col gap-3 md:flex-row">
+              <input className="input" type="file" accept=".csv,.xlsx,.xlsm,.json" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+              <button className="button button-primary whitespace-nowrap" disabled={busy} onClick={upload}>{busy ? 'Working...' : 'Upload Label File'}</button>
+            </div>
+          )}
+          <div className="mt-4 grid gap-2 text-xs font-bold text-slate-500 sm:grid-cols-3">
+            <span className="rounded-xl bg-slate-50 px-3 py-2">Tracking Number</span>
+            <span className="rounded-xl bg-slate-50 px-3 py-2">Customer / Route</span>
+            <span className="rounded-xl bg-slate-50 px-3 py-2">Address / Postal Code</span>
+          </div>
         </div>
         <LabelPreview row={preview} />
       </div>
-      <div className="card p-5">
-        <div className="grid gap-3 md:grid-cols-[1fr_220px_auto_auto]">
+      <div className="card p-4 sm:p-5">
+        <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto_auto]">
           <TextInput label="Search Tracking / Barcode" value={search} onChange={setSearch} />
-          <SelectInput label="Status" value={status} options={['', 'Pending', 'Printed', 'Reprinted', 'Error']} onChange={setStatus} />
-          <button className="button mt-6" onClick={() => load().catch((error) => showNotice('error', error.message))}>Apply</button>
-          <button className="button button-primary mt-6" disabled={busy} onClick={bulkPrint}>Print Selected</button>
+          <SelectInput label="Status" value={status} options={['', 'Uploaded', 'Pending Print', 'Printed', 'Reprinted', 'Error']} onChange={setStatus} />
+          <button className="button lg:mt-6" onClick={() => load().catch((error) => showNotice('error', error.message))}>Apply</button>
+          <button className="button button-primary lg:mt-6" disabled={busy} onClick={bulkPrint}>Print Selected</button>
         </div>
       </div>
       <DataTable
         title="Metro Labels"
         rows={rows}
-        columns={['trackingNumber', 'customerName', 'route', 'status', 'printedAt', 'errorMessage']}
+        columns={['trackingNumber', 'customerName', 'service', 'route', 'address', 'city', 'postalCode', 'status', 'uploadedBy', 'printedBy', 'printedAt']}
         emptyText="Upload a file to begin."
         select={{ selected, onChange: setSelected }}
         onRowClick={(row) => setPreview(row)}
@@ -1242,6 +1289,12 @@ function MetroLabelingPage({ showNotice }: { showNotice: (type: NoticeType, text
             <button className="button" disabled={busy} onClick={() => printRow(row, 'reprint')}>Reprint</button>
           </div>
         )}
+      />
+      <DataTable
+        title="Print History"
+        rows={printLogs}
+        columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'userId', 'errorMessage']}
+        emptyText="No print history yet."
       />
     </PageStack>
   );
@@ -1509,23 +1562,54 @@ function ExportsPage({ showNotice }: { showNotice: (type: NoticeType, text: stri
 
 function UsersPage({ currentUser, showNotice }: { currentUser: User; showNotice: (type: NoticeType, text: string) => void }) {
   const [data, setData] = useState<any>({ users: [], roles: [], sections: [] });
-  const [form, setForm] = useState<any>({ username: '', displayName: '', password: '', role: 'User', active: true, permissions: ['dashboard', 'security'] });
+  const [form, setForm] = useState<any>({
+    firstName: '',
+    lastName: '',
+    username: '',
+    email: '',
+    displayName: '',
+    temporaryPassword: '',
+    role: 'Operator',
+    active: true,
+    forcePasswordChange: true,
+    twoFactorRequired: false,
+    permissions: ['dashboard', 'metro-labeling', 'security']
+  });
+  const [sessionPanel, setSessionPanel] = useState<{ user: any; sessions: any[] } | null>(null);
+  const isAdmin = currentUser.role === 'Admin';
+  const roleOptions = data.roles?.length ? data.roles : ['Admin', 'Manager', 'Supervisor', 'Operator', 'Viewer'];
   const load = async () => setData(await api('/users'));
   useEffect(() => { load().catch((error) => showNotice('error', error.message)); }, []);
   const create = async () => {
     try {
       await postJson('/users', form);
       showNotice('success', 'User created.');
-      setForm({ username: '', displayName: '', password: '', role: 'User', active: true, permissions: ['dashboard', 'security'] });
+      setForm({
+        firstName: '',
+        lastName: '',
+        username: '',
+        email: '',
+        displayName: '',
+        temporaryPassword: '',
+        role: 'Operator',
+        active: true,
+        forcePasswordChange: true,
+        twoFactorRequired: false,
+        permissions: ['dashboard', 'metro-labeling', 'security']
+      });
       load();
     } catch (error: any) {
       showNotice('error', error.message);
     }
   };
   const save = async (user: any) => {
-    await putJson(`/users/${user.id}`, user);
-    showNotice('success', 'User updated.');
-    load();
+    try {
+      await putJson(`/users/${user.id}`, user);
+      showNotice('success', 'User updated.');
+      load();
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
   };
   const adminSecurityAction = async (path: string, message: string) => {
     try {
@@ -1536,31 +1620,57 @@ function UsersPage({ currentUser, showNotice }: { currentUser: User; showNotice:
       showNotice('error', error.message);
     }
   };
+  const viewSessions = async (row: any) => {
+    try {
+      const response = await api<{ sessions: any[] }>(`/users/${row.id}/sessions`);
+      setSessionPanel({ user: row, sessions: response.sessions || [] });
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
   return (
     <PageStack>
       <PageHeader title="Users" subtitle="Manage team access and roles." />
-      <FormCard title="Create User">
-        <FormGrid cols="grid-cols-1 md:grid-cols-5">
-          <TextInput label="Username" value={form.username} onChange={(username) => setForm({ ...form, username })} />
-          <TextInput label="Display Name" value={form.displayName} onChange={(displayName) => setForm({ ...form, displayName })} />
-          <TextInput label="Password" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} />
-          <SelectInput label="Role" value={form.role} options={data.roles} onChange={(role) => setForm({ ...form, role })} />
-          <SelectInput label="Status" value={form.active ? 'Active' : 'Disabled'} options={['Active', 'Disabled']} onChange={(status) => setForm({ ...form, active: status === 'Active' })} />
-        </FormGrid>
-        <PermissionChecks sections={data.sections} value={form.permissions} onChange={(permissions) => setForm({ ...form, permissions })} disabled={form.role === 'Admin'} />
-        <button className="button button-primary mt-4" onClick={create}>Create User</button>
-      </FormCard>
-      <div className="grid gap-4">
-        {data.users.map((user: any) => <UserCard key={user.id} user={user} roles={data.roles} sections={data.sections} onSave={save} />)}
-      </div>
-      {currentUser.role === 'Admin' && (
+      {isAdmin ? (
+        <FormCard title="Create User">
+          <FormGrid cols="grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
+            <TextInput label="First Name" value={form.firstName} onChange={(firstName) => setForm({ ...form, firstName })} />
+            <TextInput label="Last Name" value={form.lastName} onChange={(lastName) => setForm({ ...form, lastName })} />
+            <TextInput label="Username" value={form.username} onChange={(username) => setForm({ ...form, username })} />
+            <TextInput label="Email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
+            <TextInput label="Temporary Password" type="password" value={form.temporaryPassword} onChange={(temporaryPassword) => setForm({ ...form, temporaryPassword })} />
+            <TextInput label="Display Name" value={form.displayName} onChange={(displayName) => setForm({ ...form, displayName })} />
+            <SelectInput label="Role" value={form.role} options={roleOptions} onChange={(role) => setForm({ ...form, role, permissions: defaultPermissionsForRole(role) })} />
+            <SelectInput label="Status" value={form.active ? 'Active' : 'Disabled'} options={['Active', 'Disabled']} onChange={(status) => setForm({ ...form, active: status === 'Active' })} />
+          </FormGrid>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <BooleanCheck label="Force password change" checked={form.forcePasswordChange} onChange={(forcePasswordChange) => setForm({ ...form, forcePasswordChange })} />
+            <BooleanCheck label="Require 2FA" checked={form.twoFactorRequired} onChange={(twoFactorRequired) => setForm({ ...form, twoFactorRequired })} />
+          </div>
+          <PermissionChecks sections={data.sections} value={form.permissions} onChange={(permissions) => setForm({ ...form, permissions })} disabled={form.role === 'Admin'} />
+          <button className="button button-primary mt-4" onClick={create}>Create User</button>
+        </FormCard>
+      ) : (
+        <Panel title="Team Directory">
+          <p className="text-sm font-semibold text-slate-600">You can review team access. Admin access is required to create or change users.</p>
+        </Panel>
+      )}
+      {isAdmin ? (
+        <div className="grid gap-4">
+          {data.users.map((user: any) => <UserCard key={user.id} user={user} roles={roleOptions} sections={data.sections} onSave={save} />)}
+        </div>
+      ) : (
+        <DataTable title="Users" rows={data.users} columns={['displayName', 'username', 'email', 'role', 'active', 'lastLogin']} emptyText="No users found." />
+      )}
+      {isAdmin && (
         <DataTable
           title="Admin User Security"
           rows={data.users}
-          columns={['username', 'role', 'twoFactorEnabled', 'failedLoginCount', 'lockedUntil', 'lastLogin']}
+          columns={['username', 'role', 'twoFactorEnabled', 'twoFactorRequired', 'failedLoginCount', 'lockedUntil', 'lastLogin']}
           emptyText="No users found."
           actions={(row) => (
             <div className="flex flex-wrap gap-2">
+              <button className="button button-subtle" onClick={() => viewSessions(row)}>Sessions</button>
               <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/unlock`, 'User unlocked.')}>Unlock</button>
               <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/reset-2fa`, 'Two-factor setup reset.')}>Reset 2FA</button>
               <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/revoke-sessions`, 'User sessions revoked.')}>Logout Devices</button>
@@ -1568,21 +1678,46 @@ function UsersPage({ currentUser, showNotice }: { currentUser: User; showNotice:
           )}
         />
       )}
+      {sessionPanel && (
+        <DataTable
+          title={`Sessions: ${sessionPanel.user.displayName || sessionPanel.user.username}`}
+          rows={sessionPanel.sessions}
+          columns={['device', 'ip', 'createdAt', 'lastSeenAt', 'expiresAt', 'revokedAt']}
+          emptyText="No sessions recorded."
+        />
+      )}
     </PageStack>
   );
 }
 
 function UserCard({ user, roles, sections, onSave }: { user: any; roles: string[]; sections: string[]; onSave: (user: any) => void }) {
-  const [draft, setDraft] = useState({ ...user, password: '' });
+  const [draft, setDraft] = useState({ ...user, temporaryPassword: '', password: '' });
+  useEffect(() => {
+    setDraft({ ...user, temporaryPassword: '', password: '' });
+  }, [user]);
   return (
-    <div className="card p-5">
-      <FormGrid cols="grid-cols-1 md:grid-cols-5">
+    <div className="card p-4 sm:p-5">
+      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="font-black text-slate-950">{draft.displayName || draft.username}</h3>
+          <p className="text-sm font-semibold text-slate-500">{draft.role} · {draft.active ? 'Active' : 'Disabled'}</p>
+        </div>
+        {draft.lockedUntil && <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700">Locked</span>}
+      </div>
+      <FormGrid cols="grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
+        <TextInput label="First Name" value={draft.firstName || ''} onChange={(firstName) => setDraft({ ...draft, firstName })} />
+        <TextInput label="Last Name" value={draft.lastName || ''} onChange={(lastName) => setDraft({ ...draft, lastName })} />
         <TextInput label="Username" value={draft.username} onChange={(username) => setDraft({ ...draft, username })} />
+        <TextInput label="Email" value={draft.email || ''} onChange={(email) => setDraft({ ...draft, email })} />
         <TextInput label="Display Name" value={draft.displayName} onChange={(displayName) => setDraft({ ...draft, displayName })} />
-        <TextInput label="Reset Password" type="password" value={draft.password} onChange={(password) => setDraft({ ...draft, password })} />
-        <SelectInput label="Role" value={draft.role} options={roles} onChange={(role) => setDraft({ ...draft, role })} />
+        <TextInput label="Reset Password" type="password" value={draft.temporaryPassword} onChange={(temporaryPassword) => setDraft({ ...draft, temporaryPassword })} />
+        <SelectInput label="Role" value={draft.role} options={roles} onChange={(role) => setDraft({ ...draft, role, permissions: defaultPermissionsForRole(role) })} />
         <SelectInput label="Status" value={draft.active ? 'Active' : 'Disabled'} options={['Active', 'Disabled']} onChange={(status) => setDraft({ ...draft, active: status === 'Active' })} />
       </FormGrid>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <BooleanCheck label="Force password change" checked={Boolean(draft.forcePasswordChange)} onChange={(forcePasswordChange) => setDraft({ ...draft, forcePasswordChange })} />
+        <BooleanCheck label="Require 2FA" checked={Boolean(draft.twoFactorRequired)} onChange={(twoFactorRequired) => setDraft({ ...draft, twoFactorRequired })} />
+      </div>
       <PermissionChecks sections={sections} value={draft.permissions || []} onChange={(permissions) => setDraft({ ...draft, permissions })} disabled={draft.role === 'Admin'} />
       <button className="button button-primary mt-4" onClick={() => onSave(draft)}>Save User</button>
     </div>
@@ -1840,8 +1975,9 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
 }
 
 function LabelPreview({ row }: { row: MetroLabelRow | null }) {
+  const addressLine = row ? [row.address, row.city, row.postalCode].filter(Boolean).join(', ') : '';
   return (
-    <div className="card p-5">
+    <div className="card p-4 sm:p-5">
       <h3 className="mb-4 font-black text-slate-950">4x2 Label Preview</h3>
       {row ? (
         <div className="mx-auto aspect-[2/1] w-full max-w-[440px] overflow-hidden rounded-lg border-2 border-slate-900 bg-white text-slate-900 shadow-enterprise">
@@ -1850,8 +1986,8 @@ function LabelPreview({ row }: { row: MetroLabelRow | null }) {
             <div className="p-2 text-xl font-black">{row.trackingNumber}</div>
           </div>
           <div className="grid grid-cols-[38%_62%] border-b border-slate-400">
-            <div className="p-2 text-lg font-black">Driver:</div>
-            <div className="p-2 text-center text-xl font-black">{row.customerName || 'N/A'}</div>
+            <div className="p-2 text-lg font-black">Customer:</div>
+            <div className="truncate p-2 text-center text-xl font-black">{row.customerName || 'N/A'}</div>
           </div>
           <div className="grid grid-cols-[38%_62%] border-b border-slate-400">
             <div className="p-2 text-lg font-black">Routing Seq:</div>
@@ -1859,7 +1995,10 @@ function LabelPreview({ row }: { row: MetroLabelRow | null }) {
           </div>
           <div className="grid grid-cols-[38%_62%]">
             <div className="p-2 text-lg font-black">Address:</div>
-            <div className="p-2 text-center text-base font-black">{row.service || row.customerName || 'N/A'}</div>
+            <div className="p-2 text-center text-sm font-black leading-tight">
+              <div className="truncate">{row.service || 'N/A'}</div>
+              <div className="truncate">{addressLine || 'N/A'}</div>
+            </div>
           </div>
         </div>
       ) : <EmptyState text="Select or import a label row to preview the 4x2 layout." />}
@@ -1916,6 +2055,15 @@ function SelectInput({ label, value, options, onChange }: { label: string; value
   return <label className="label">{label}<select className="input" value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{option || 'All'}</option>)}</select></label>;
 }
 
+function BooleanCheck({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm">
+      <input className="h-4 w-4 accent-slate-900" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      {label}
+    </label>
+  );
+}
+
 function PermissionChecks({ sections, value, onChange, disabled }: { sections: string[]; value: string[]; onChange: (value: string[]) => void; disabled?: boolean }) {
   const checked = disabled ? sections : value;
   return (
@@ -1941,15 +2089,15 @@ function PageHeader({ action }: { title: string; subtitle: string; action?: Reac
 function Kpi({ label, value, helper, tone = 'slate', icon }: { label: string; value: string; helper?: string; tone?: 'slate' | 'teal' | 'amber' | 'red'; icon?: IconName }) {
   const accent = tone === 'teal' ? 'bg-cyan-50 text-broad-teal' : tone === 'amber' ? 'bg-amber-50 text-amber-700' : tone === 'red' ? 'bg-red-50 text-red-700' : 'bg-stone-100 text-slate-700';
   return (
-    <div className="card p-4 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(46,38,26,0.1)]">
+    <div className="card p-3 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(46,38,26,0.1)] sm:p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
-          <div className="mt-2 truncate text-2xl font-black text-slate-950 2xl:text-3xl">{value}</div>
+        <div className="min-w-0">
+          <div className="truncate text-[11px] font-black uppercase tracking-[0.1em] text-slate-500 sm:text-xs sm:tracking-[0.14em]">{label}</div>
+          <div className="mt-1.5 truncate text-xl font-black text-slate-950 sm:mt-2 sm:text-2xl 2xl:text-3xl">{value}</div>
         </div>
-        {icon && <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${accent}`}><NavIcon name={icon} /></div>}
+        {icon && <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl sm:h-10 sm:w-10 ${accent}`}><NavIcon name={icon} /></div>}
       </div>
-      {helper && <div className="mt-2 text-sm font-semibold text-slate-500">{helper}</div>}
+      {helper && <div className="mt-1.5 truncate text-xs font-semibold text-slate-500 sm:mt-2 sm:text-sm">{helper}</div>}
     </div>
   );
 }
@@ -1958,11 +2106,11 @@ function InsightCard({ label, value, detail, tone = 'slate' }: { label: string; 
   const accent = tone === 'teal' ? 'border-broad-teal/25 bg-cyan-50 text-broad-teal' : tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-800' : tone === 'red' ? 'border-red-200 bg-red-50 text-red-800' : 'border-stone-200 bg-stone-50 text-slate-800';
   return (
     <div className="card overflow-hidden">
-      <div className={`border-b px-5 py-4 ${accent}`}>
-        <div className="text-xs font-black uppercase tracking-[0.16em] opacity-75">{label}</div>
-        <div className="mt-2 text-2xl font-black tracking-tight">{value}</div>
+      <div className={`border-b px-4 py-3 sm:px-5 sm:py-4 ${accent}`}>
+        <div className="text-[11px] font-black uppercase tracking-[0.1em] opacity-75 sm:text-xs sm:tracking-[0.16em]">{label}</div>
+        <div className="mt-1.5 truncate text-xl font-black tracking-tight sm:mt-2 sm:text-2xl">{value}</div>
       </div>
-      <div className="px-5 py-4 text-sm font-semibold leading-6 text-slate-600">{detail}</div>
+      <div className="px-4 py-3 text-xs font-semibold leading-5 text-slate-600 sm:px-5 sm:py-4 sm:text-sm sm:leading-6">{detail}</div>
     </div>
   );
 }
@@ -2012,7 +2160,7 @@ function DataTable({ title, rows, columns, actions, select, onRowClick, emptyTex
   };
   return (
     <div className="card overflow-hidden">
-      <div className="border-b border-slate-200 px-5 py-4"><h3 className="font-bold text-slate-950">{title}</h3></div>
+      {title && <div className="border-b border-slate-200 px-5 py-4"><h3 className="font-bold text-slate-950">{title}</h3></div>}
       <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full">
           <thead className="table-head">
@@ -2035,12 +2183,12 @@ function DataTable({ title, rows, columns, actions, select, onRowClick, emptyTex
       </div>
       <div className="grid gap-3 p-4 md:hidden">
         {rows?.length ? rows.map((row, index) => (
-          <div key={row.id || index} className="rounded-xl border border-slate-200 bg-slate-50 p-4" onClick={() => onRowClick?.(row)}>
-            <div className="flex items-start justify-between gap-3">
+          <div key={row.id || index} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4" onClick={() => onRowClick?.(row)}>
+            <div className="flex min-w-0 items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-black text-slate-950">{formatCell(row[columns[0]]) || `Record ${index + 1}`}</div>
                 {columns.slice(1, 5).map((column) => (
-                  <div key={column} className="mt-2 grid grid-cols-[110px_1fr] gap-2 text-xs">
+                  <div key={column} className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-2 text-xs sm:grid-cols-[110px_minmax(0,1fr)]">
                     <span className="font-bold uppercase tracking-[0.1em] text-slate-500">{human(column)}</span>
                     <span className="truncate font-semibold text-slate-800">{formatCell(row[column]) || '-'}</span>
                   </div>

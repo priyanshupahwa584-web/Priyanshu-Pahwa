@@ -33,7 +33,7 @@ The app can initialize these tabs from Settings after credentials are configured
 
 Columns:
 
-`id, trackingNumber, barcodeValue, customerName, service, route, status, uploadedFileId, printedAt, printedBy, reprintCount, errorMessage, createdAt, updatedAt`
+`id, trackingNumber, barcodeValue, customerName, service, route, status, uploadedFileId, printedAt, printedBy, reprintCount, errorMessage, createdAt, updatedAt, address, city, postalCode, uploadedBy`
 
 ### FulfilmentReports
 
@@ -134,7 +134,7 @@ VITE_API_URL=<your-local-backend-url>
 - CORS allowlist
 - Same-origin write protection for cookie sessions
 - HTTPS required in production
-- Roles: Admin, Manager, Supervisor, User
+- Roles: Admin, Manager, Supervisor, Operator, Viewer
 - Global and login rate limiting
 - Account lock after 5 failed attempts
 - Passwords stored as bcrypt hashes only
@@ -163,7 +163,7 @@ Each export includes filters, row count, user, and timestamp metadata. Exported 
 
 ## Metro Labeling
 
-Metro Labeling accepts `.csv`, `.xlsx`, `.xlsm`, and `.json` files. The import reads real table fields such as Tracking Number, Driver, Routing Sequence, Delivery Address, City, and Postal Code, normalizes them into the `MetroLabeling` tab, and uploads the original file to a `Labels` folder in Google Drive.
+Metro Labeling accepts `.csv`, `.xlsx`, `.xlsm`, and `.json` files. The import reads real table fields such as Tracking Number, Customer Name, Service, Route, Address, City, and Postal Code, normalizes them into the `MetroLabeling` tab, and uploads the original file to a `Labels` folder in Google Drive.
 
 Supported actions:
 

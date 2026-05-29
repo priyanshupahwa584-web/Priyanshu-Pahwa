@@ -17,7 +17,7 @@ function value(map, keys, fallback = '') {
   return fallback;
 }
 
-function normalizeMetroRow(row, uploadedFileId, timestamp) {
+function normalizeMetroRow(row, uploadedFileId, timestamp, uploadedBy = '') {
   const map = keyMap(row);
   const trackingNumber = value(map, [
     'trackingnumber',
@@ -41,8 +41,12 @@ function normalizeMetroRow(row, uploadedFileId, timestamp) {
     customerName,
     service,
     route,
-    status: 'Pending',
+    address,
+    city,
+    postalCode: postal,
+    status: 'Uploaded',
     uploadedFileId,
+    uploadedBy,
     printedAt: '',
     printedBy: '',
     reprintCount: 0,
@@ -52,15 +56,25 @@ function normalizeMetroRow(row, uploadedFileId, timestamp) {
   };
 }
 
-export async function parseMetroLabelFile(filePath, originalName, uploadedFileId = '') {
+export async function parseMetroLabelFile(filePath, originalName, uploadedFileId = '', uploadedBy = '') {
   const rawRows = await parseImportFile(filePath, originalName);
   const timestamp = nowIso();
   const rows = [];
   const errors = [];
   rawRows.forEach((row, index) => {
-    const record = normalizeMetroRow(row, uploadedFileId, timestamp);
-    if (!record.trackingNumber) {
-      errors.push({ row: index + 2, message: 'Tracking Number is required.' });
+    const record = normalizeMetroRow(row, uploadedFileId, timestamp, uploadedBy);
+    const required = [
+      ['trackingNumber', 'Tracking Number'],
+      ['customerName', 'Customer Name'],
+      ['service', 'Service'],
+      ['route', 'Route'],
+      ['address', 'Address'],
+      ['city', 'City'],
+      ['postalCode', 'Postal Code']
+    ];
+    const missing = required.filter(([key]) => !record[key]).map(([, label]) => label);
+    if (missing.length) {
+      errors.push({ row: index + 2, message: `${missing.join(', ')} required.` });
       return;
     }
     rows.push(record);

@@ -21,11 +21,12 @@ const envAdminState = {
 const envSessions = new Map();
 const roleAliases = {
   'Team Lead': 'Supervisor',
-  'Scanner/User': 'User'
+  'Scanner/User': 'Operator',
+  User: 'Operator'
 };
 
 function canonicalRole(role) {
-  return roleAliases[role] || role || 'User';
+  return roleAliases[role] || role || 'Operator';
 }
 
 function isEnvUser(user) {
@@ -97,19 +98,29 @@ function userWithEnvSecurity(user) {
 
 export function publicUser(user) {
   const role = canonicalRole(user.role);
+  const roleDefaults = defaultPermissionsByRole[role] || defaultPermissionsByRole.Operator;
+  const savedPermissions = storedPermissions(user);
+  const roleMinimums = {
+    Manager: ['users', 'metro-labeling'],
+    Supervisor: ['metro-labeling'],
+    Operator: ['metro-labeling']
+  };
   const permissions = role === 'Admin'
     ? defaultPermissionsByRole.Admin
-    : storedPermissions(user).length
-      ? storedPermissions(user)
-      : defaultPermissionsByRole[role] || defaultPermissionsByRole.User;
+    : Array.from(new Set([...(savedPermissions.length ? savedPermissions : roleDefaults), ...(roleMinimums[role] || [])]));
   return {
     id: user.id,
     username: user.username,
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+    email: user.email || '',
     displayName: user.displayName || user.username,
     role,
     active: String(user.active).toLowerCase() !== 'false',
     permissions,
-    twoFactorEnabled: String(user.twoFactorEnabled || 'false').toLowerCase() === 'true'
+    twoFactorEnabled: String(user.twoFactorEnabled || 'false').toLowerCase() === 'true',
+    forcePasswordChange: String(user.forcePasswordChange || 'false').toLowerCase() === 'true',
+    twoFactorRequired: String(user.twoFactorRequired || 'false').toLowerCase() === 'true'
   };
 }
 
@@ -373,12 +384,26 @@ export async function changePassword(user, { currentPassword, newPassword }) {
   await updateRowById(tabs.users, fullUser.id, {
     passwordHash: await bcrypt.hash(newPassword, 12),
     passwordChangedAt: nowIso(),
+    forcePasswordChange: 'false',
     updatedAt: nowIso()
   });
   await revokeAllSessions(fullUser, 'password_change', user.sessionId);
 }
 
-export async function createUser({ username, displayName, password, role, active = true, permissions = [] }) {
+export async function createUser({
+  firstName = '',
+  lastName = '',
+  username,
+  email = '',
+  displayName = '',
+  password,
+  role,
+  active = true,
+  forcePasswordChange = true,
+  twoFactorRequired = false,
+  permissions = []
+}) {
+  role = canonicalRole(role);
   if (!roles.includes(role)) {
     const error = new Error('Unsupported role.');
     error.statusCode = 400;
@@ -391,10 +416,14 @@ export async function createUser({ username, displayName, password, role, active
     throw error;
   }
   const createdAt = nowIso();
+  const cleanDisplayName = displayName || [firstName, lastName].filter(Boolean).join(' ') || username;
   const record = {
     id: id('user'),
     username,
-    displayName: displayName || username,
+    firstName,
+    lastName,
+    email,
+    displayName: cleanDisplayName,
     passwordHash: await bcrypt.hash(password, 12),
     role,
     active: active ? 'true' : 'false',
@@ -408,7 +437,9 @@ export async function createUser({ username, displayName, password, role, active
     twoFactorSecret: '',
     twoFactorPendingSecret: '',
     backupCodeHashes: '',
-    passwordChangedAt: createdAt
+    passwordChangedAt: createdAt,
+    forcePasswordChange: forcePasswordChange ? 'true' : 'false',
+    twoFactorRequired: twoFactorRequired ? 'true' : 'false'
   };
   await appendRows(tabs.users, [record]);
   return publicUser(record);
@@ -419,12 +450,30 @@ export async function updateUser(userId, patch) {
   const current = users.find((user) => user.id === userId);
   if (!current) return null;
   const role = canonicalRole(patch.role ?? current.role);
+  if (!roles.includes(role)) {
+    const error = new Error('Unsupported role.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const duplicate = users.find((user) => user.id !== userId && String(user.username || '').toLowerCase() === String(patch.username || '').toLowerCase());
+  if (duplicate) {
+    const error = new Error('Username already exists.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const firstName = patch.firstName ?? current.firstName ?? '';
+  const lastName = patch.lastName ?? current.lastName ?? '';
   const next = {
     username: patch.username ?? current.username,
-    displayName: patch.displayName ?? current.displayName,
+    firstName,
+    lastName,
+    email: patch.email ?? current.email ?? '',
+    displayName: patch.displayName || [firstName, lastName].filter(Boolean).join(' ') || patch.username || current.displayName,
     role,
     active: typeof patch.active === 'boolean' ? String(patch.active) : String(current.active || 'true'),
     permissions: Array.isArray(patch.permissions) ? (role === 'Admin' ? defaultPermissionsByRole.Admin : patch.permissions).join(',') : current.permissions,
+    forcePasswordChange: typeof patch.forcePasswordChange === 'boolean' ? String(patch.forcePasswordChange) : String(current.forcePasswordChange || 'false'),
+    twoFactorRequired: typeof patch.twoFactorRequired === 'boolean' ? String(patch.twoFactorRequired) : String(current.twoFactorRequired || 'false'),
     updatedAt: nowIso()
   };
   if (patch.password) {
@@ -444,6 +493,27 @@ export async function listUsers() {
     lastLogin: user.lastLogin || '',
     passwordChangedAt: user.passwordChangedAt || '',
     recoveryCodesRemaining: parseJsonArray(user.backupCodeHashes).length
+  }));
+}
+
+export async function getUserSessions(userId) {
+  if (userId === 'env_admin') {
+    return listSessionsForUser({ id: 'env_admin', source: 'env' }, true);
+  }
+  const users = await readRows(tabs.users);
+  const user = users.find((row) => row.id === userId);
+  if (!user) return null;
+  const sessions = await listSessionsForUser(user, true);
+  return sessions.map((session) => ({
+    id: session.id,
+    username: session.username,
+    device: session.device,
+    ip: session.ip,
+    createdAt: session.createdAt,
+    lastSeenAt: session.lastSeenAt,
+    expiresAt: session.expiresAt,
+    revokedAt: session.revokedAt,
+    revokedBy: session.revokedBy
   }));
 }
 

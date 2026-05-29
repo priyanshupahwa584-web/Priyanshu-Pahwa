@@ -1,4 +1,4 @@
-export type Role = 'Admin' | 'Manager' | 'Supervisor' | 'User';
+export type Role = 'Admin' | 'Manager' | 'Supervisor' | 'Operator' | 'Viewer';
 
 export type SectionKey =
   | 'dashboard'
@@ -16,11 +16,16 @@ export type SectionKey =
 export type User = {
   id: string;
   username: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
   displayName: string;
   role: Role;
   active: boolean;
   permissions: SectionKey[];
   twoFactorEnabled?: boolean;
+  forcePasswordChange?: boolean;
+  twoFactorRequired?: boolean;
 };
 
 export type NoticeType = 'success' | 'error' | 'info';
@@ -73,8 +78,12 @@ export type MetroLabelRow = {
   customerName: string;
   service: string;
   route: string;
-  status: 'Pending' | 'Printed' | 'Reprinted' | 'Error' | string;
+  address: string;
+  city: string;
+  postalCode: string;
+  status: 'Uploaded' | 'Pending Print' | 'Printed' | 'Reprinted' | 'Error' | string;
   uploadedFileId: string;
+  uploadedBy: string;
   printedAt: string;
   printedBy: string;
   reprintCount: string | number;

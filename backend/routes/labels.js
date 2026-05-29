@@ -46,7 +46,7 @@ function filterLabels(rows, query = {}) {
   return rows.filter((row) => {
     if (status && String(row.status || '').toLowerCase() !== status) return false;
     if (!search) return true;
-    const haystack = `${row.trackingNumber} ${row.barcodeValue} ${row.customerName} ${row.service} ${row.route}`.toLowerCase();
+    const haystack = `${row.trackingNumber} ${row.barcodeValue} ${row.customerName} ${row.service} ${row.route} ${row.address} ${row.city} ${row.postalCode}`.toLowerCase();
     return haystack.includes(search);
   });
 }
@@ -90,6 +90,14 @@ async function markPrintResult(label, body, req, status, errorMessage = '') {
   return updated;
 }
 
+async function markPendingPrint(label) {
+  return updateRowById(tabs.metroLabeling, label.id, {
+    status: 'Pending Print',
+    errorMessage: '',
+    updatedAt: nowIso()
+  });
+}
+
 async function buildPrintPayload(label, type) {
   const normalized = normalizeLabelPayload(label);
   const zpl = buildZplLabel(normalized);
@@ -126,7 +134,7 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
       mimeType: req.file.mimetype,
       folderName: 'Labels'
     });
-    const parsed = await parseMetroLabelFile(req.file.path, req.file.originalname, driveFile.id);
+    const parsed = await parseMetroLabelFile(req.file.path, req.file.originalname, driveFile.id, req.user.username);
     if (parsed.errors.length) {
       await appendRows(tabs.uploads, [{
         id: id('upload'),
@@ -178,7 +186,10 @@ labelsRouter.post('/print/test', authRequired, requireAccess('printer-setup'), a
       barcodeValue: 'TEST-0001',
       customerName: 'Broadreach Test',
       service: '4x2 Label Check',
-      route: '001'
+      route: '001',
+      address: '123 Operations Way',
+      city: 'Toronto',
+      postalCode: 'M1A 1A1'
     }, body.type);
     res.json({
       ...payload,
@@ -206,6 +217,8 @@ labelsRouter.post('/print', authRequired, requireAccess('metro-labeling'), async
     if (!body.prepareOnly) {
       const status = body.action === 'reprint' || ['Printed', 'Reprinted'].includes(label.status) ? 'Reprinted' : 'Printed';
       updated = await markPrintResult(label, body, req, status);
+    } else {
+      updated = await markPendingPrint(label) || label;
     }
     res.json({
       row: updated,

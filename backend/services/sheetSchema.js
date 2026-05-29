@@ -42,7 +42,12 @@ export const sheetHeaders = {
     'twoFactorSecret',
     'twoFactorPendingSecret',
     'backupCodeHashes',
-    'passwordChangedAt'
+    'passwordChangedAt',
+    'forcePasswordChange',
+    'twoFactorRequired',
+    'firstName',
+    'lastName',
+    'email'
   ],
   [tabs.audit]: ['id', 'actor', 'action', 'entity', 'entityId', 'ip', 'device', 'metadata', 'createdAt'],
   [tabs.uploads]: ['id', 'fileName', 'mimeType', 'driveFileId', 'size', 'uploadedBy', 'status', 'message', 'createdAt'],
@@ -62,7 +67,11 @@ export const sheetHeaders = {
     'reprintCount',
     'errorMessage',
     'createdAt',
-    'updatedAt'
+    'updatedAt',
+    'address',
+    'city',
+    'postalCode',
+    'uploadedBy'
   ],
   [tabs.fulfilmentReports]: [
     'id',
@@ -102,7 +111,7 @@ export const sheetHeaders = {
   ]
 };
 
-export const roles = ['Admin', 'Manager', 'Supervisor', 'User'];
+export const roles = ['Admin', 'Manager', 'Supervisor', 'Operator', 'Viewer'];
 
 export const sections = [
   'dashboard',
@@ -120,7 +129,8 @@ export const sections = [
 
 export const defaultPermissionsByRole = {
   Admin: sections,
-  Manager: ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'activity', 'printer-setup', 'security'],
+  Manager: ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'security'],
   Supervisor: ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'activity', 'printer-setup', 'security'],
-  User: ['dashboard', 'security']
+  Operator: ['dashboard', 'metro-labeling', 'printer-setup', 'security'],
+  Viewer: ['dashboard', 'data', 'activity', 'security']
 };
