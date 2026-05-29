@@ -134,6 +134,7 @@ VITE_API_URL=<your-local-backend-url>
 - `GET /api/users/:id/sessions`
 - `GET /api/metro-labeling`
 - `POST /api/metro-labeling/upload`
+- `POST /api/metro-labeling/scan`
 - `POST /api/metro-labeling/print`
 - `POST /api/metro-labeling/reprint`
 - `PATCH /api/metro-labeling/:id`
@@ -178,9 +179,12 @@ Each export includes filters, row count, user, and timestamp metadata. Exported 
 
 Metro Labeling accepts `.csv`, `.xlsx`, `.xlsm`, and `.json` files. The import reads real Metro table fields such as Tracking Number, Driver, Routing Sequence, Delivery Address, City, and Postal Code, normalizes them into the `MetroLabeling` tab, and uploads the original file to a `Labels` folder in Google Drive.
 
+If `GOOGLE_DRIVE_FOLDER_ID` is not configured, Metro rows can still import into the `MetroLabeling` tab. The response includes this warning: `Drive archive folder not configured. File imported but original upload was not archived.`
+
 Supported actions:
 
 - Search by tracking number, barcode, customer/address, service, or route.
+- Scan a tracking number, select the matching label, and print automatically when Scan Mode is enabled.
 - Preview a real 4x2 label layout.
 - Print one label, reprint a label, or bulk print selected labels.
 - Write every print/reprint/error to `PrintLogs` and `AuditLogs`.

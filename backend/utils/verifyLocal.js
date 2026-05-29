@@ -38,6 +38,7 @@ try {
   assert(result.body.adminAuth?.configured === true, 'health endpoint should report admin auth configured');
   assert(result.body.adminAuth?.passwordHashConfigured === true, 'health endpoint should report admin hash configured');
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
+  assert(result.body.driveFolderConfigured === false, 'health endpoint should report missing Drive archive folder in local verify');
 
   result = await request(baseUrl, '/auth/me');
   assert(result.response.status === 401, 'unauthenticated auth/me should return 401');
@@ -93,6 +94,13 @@ try {
 
   result = await request(baseUrl, '/metro-labeling/history', { headers: { cookie } });
   assert(result.response.status === 503, 'Metro Labeling history route should exist and report missing Google config');
+
+  result = await request(baseUrl, '/metro-labeling/scan', {
+    method: 'POST',
+    headers: { cookie },
+    body: JSON.stringify({ trackingNumber: 'VERIFY-TRACKING' })
+  });
+  assert(result.response.status === 503, 'Metro scan route should exist and report missing Google config');
 
   result = await request(baseUrl, '/users', { headers: { cookie } });
   assert(result.response.status === 503, 'Users route should exist and report missing Google config');

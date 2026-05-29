@@ -83,6 +83,12 @@ async function findLabel({ id: rowId, trackingNumber }) {
   return rows.find((row) => (rowId && row.id === rowId) || (trackingNumber && row.trackingNumber === trackingNumber)) || null;
 }
 
+function exactTrackingMatch(row, value) {
+  const tracking = String(value || '').trim().toLowerCase();
+  if (!tracking) return false;
+  return [row.trackingNumber, row.barcodeValue].some((candidate) => String(candidate || '').trim().toLowerCase() === tracking);
+}
+
 async function markPrintResult(label, body, req, status, errorMessage = '') {
   const timestamp = nowIso();
   const action = body.action === 'reprint' || ['Printed', 'Reprinted'].includes(label.status) ? 'reprint' : 'print';
@@ -156,15 +162,43 @@ async function sendPrintLogs(_req, res, next) {
 labelsRouter.get('/logs', authRequired, requireAccess('metro-labeling'), sendPrintLogs);
 labelsRouter.get('/history', authRequired, requireAccess('metro-labeling'), sendPrintLogs);
 
+labelsRouter.post('/scan', authRequired, requireAccess('metro-labeling'), async (req, res, next) => {
+  try {
+    const trackingNumber = String(req.body?.trackingNumber || '').trim();
+    if (!trackingNumber) return res.status(400).json({ message: 'Scan Tracking / Barcode is required.' });
+    const rows = await readRows(tabs.metroLabeling);
+    const row = rows.find((item) => exactTrackingMatch(item, trackingNumber));
+    await audit({
+      actor: req.user.username,
+      action: row ? 'metro_label_scanned' : 'metro_label_scan_not_found',
+      entity: 'MetroLabeling',
+      entityId: row?.id || '',
+      ip: req.ip,
+      device: req.get('user-agent') || '',
+      metadata: { trackingNumber, status: row?.status || 'Not found' }
+    });
+    if (!row) return res.status(404).json({ message: 'Tracking not found.' });
+    res.json({ row, scannedBy: req.user.username, scannedAt: nowIso() });
+  } catch (error) {
+    next(error);
+  }
+});
+
 labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requireLabelUploader, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Choose a CSV, XLSX, XLSM, or JSON label file first.' });
-    const driveFile = await uploadFileToDriveFolder({
-      filePath: req.file.path,
-      fileName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      folderName: 'Labels'
-    });
+    let driveFile = { id: '', name: req.file.originalname };
+    let archiveWarning = '';
+    if (config.google.driveFolderId) {
+      driveFile = await uploadFileToDriveFolder({
+        filePath: req.file.path,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        folderName: 'Labels'
+      });
+    } else {
+      archiveWarning = 'Drive archive folder not configured. File imported but original upload was not archived.';
+    }
     const parsed = await parseMetroLabelFile(req.file.path, req.file.originalname, driveFile.id, req.user.username);
     if (!parsed.rows.length && parsed.errors.length) {
       await appendRows(tabs.uploads, [{
@@ -174,8 +208,8 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
         driveFileId: driveFile.id,
         size: req.file.size,
         uploadedBy: req.user.username,
-        status: 'Failed',
-        message: JSON.stringify(parsed.errors.slice(0, 20)),
+        status: archiveWarning ? 'Failed - Not Archived' : 'Failed',
+        message: archiveWarning || JSON.stringify(parsed.errors.slice(0, 20)),
         createdAt: nowIso()
       }]);
       const missingTracking = parsed.errors.some((error) => String(error.message || '').includes('Tracking Number'));
@@ -184,7 +218,8 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
         errors: parsed.errors,
         importedRows: 0,
         skippedRows: parsed.skippedCount,
-        rejectedRows: parsed.rejectedCount
+        rejectedRows: parsed.rejectedCount,
+        warning: archiveWarning
       });
     }
     await appendRows(tabs.metroLabeling, parsed.rows);
@@ -195,8 +230,8 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
         driveFileId: driveFile.id,
         size: req.file.size,
         uploadedBy: req.user.username,
-        status: parsed.errors.length ? 'Imported With Skips' : 'Imported',
-        message: `${parsed.rows.length} Metro label rows imported${parsed.errors.length ? `, ${parsed.errors.length} rejected` : ''}`,
+        status: archiveWarning ? 'Imported - Not Archived' : parsed.errors.length ? 'Imported With Skips' : 'Imported',
+        message: archiveWarning || `${parsed.rows.length} Metro label rows imported${parsed.errors.length ? `, ${parsed.errors.length} rejected` : ''}`,
         createdAt: nowIso()
       }]);
     await audit({
@@ -216,6 +251,7 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
       uploadedBy: req.user.username,
       uploadedAt: nowIso(),
       driveFileId: driveFile.id,
+      warning: archiveWarning,
       rows: parsed.rows.slice(0, 50)
     });
   } catch (error) {

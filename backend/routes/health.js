@@ -13,6 +13,7 @@ healthRouter.get('/', (_req, res) => {
     buildDate: config.buildDate,
     adminAuth: adminAuthDiagnostic(),
     googleConfigured: configured,
+    driveFolderConfigured: Boolean(config.google.driveFolderId),
     googleConfigError: configured ? '' : googleConfigError(),
     dataSource: 'Google Sheets API',
     fileStorage: 'Google Drive API'

@@ -318,6 +318,14 @@
     @apply break-words text-sm sm:text-lg;
   }
 
+  .metro-scan-input {
+    @apply h-14 text-lg font-black tracking-wide sm:h-16 sm:text-2xl;
+  }
+
+  .metro-scan-error {
+    @apply border-red-400 bg-red-50 text-red-800 shadow-[0_0_0_4px_rgba(239,68,68,0.12)];
+  }
+
   .fullscreen-backdrop {
     @apply fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 p-0 backdrop-blur-md sm:p-5;
   }

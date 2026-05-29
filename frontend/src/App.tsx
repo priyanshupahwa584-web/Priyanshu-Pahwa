@@ -1174,6 +1174,15 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [uploadSummary, setUploadSummary] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
+  const [scanMode, setScanMode] = useState(false);
+  const [scanStatus, setScanStatus] = useState('Ready to scan');
+  const [lastScanned, setLastScanned] = useState<{ trackingNumber: string; status: string; at: string } | null>(null);
+  const [lastPrinted, setLastPrinted] = useState<{ trackingNumber: string; at: string; printerName: string } | null>(null);
+  const [autoPrintOnScan, setAutoPrintOnScan] = useState(true);
+  const [autoClearAfterPrint, setAutoClearAfterPrint] = useState(true);
+  const [autoReprint, setAutoReprint] = useState(false);
+  const [confirmBeforeReprint, setConfirmBeforeReprint] = useState(true);
   const printerName = getDefaultPrinter();
   const canUpload = ['Admin', 'Manager', 'Supervisor'].includes(user.role);
   const query = useMemo(() => new URLSearchParams(Object.entries({ search, status }).filter(([, value]) => value)).toString(), [search, status]);
@@ -1187,24 +1196,36 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     };
   }, [rows]);
 
+  const normalizeMetroRow = (row: MetroLabelRow): MetroLabelRow => ({
+    ...row,
+    driver: row.driver || row.customerName || '',
+    routingSequence: row.routingSequence || row.route || '',
+    deliveryAddress: row.deliveryAddress || row.address || '',
+    fullAddress: row.fullAddress || [row.deliveryAddress || row.address, row.city, row.postalCode].filter(Boolean).join(', ')
+  });
+
+  const focusScanInput = () => {
+    window.setTimeout(() => {
+      scanInputRef.current?.focus();
+      scanInputRef.current?.select();
+    }, 60);
+  };
+
   const load = async () => {
     const [response, logs] = await Promise.all([
       api<{ rows: MetroLabelRow[] }>(`/metro-labeling?${query}`),
       api<{ rows: any[] }>('/metro-labeling/history').catch(() => ({ rows: [] }))
     ]);
-    const normalizedRows = (response.rows || []).map((row) => ({
-      ...row,
-      driver: row.driver || row.customerName || '',
-      routingSequence: row.routingSequence || row.route || '',
-      deliveryAddress: row.deliveryAddress || row.address || '',
-      fullAddress: row.fullAddress || [row.deliveryAddress || row.address, row.city, row.postalCode].filter(Boolean).join(', ')
-    }));
+    const normalizedRows = (response.rows || []).map(normalizeMetroRow);
     setRows(normalizedRows);
     setPrintLogs(logs.rows || []);
     setPreview((current) => current || normalizedRows[0] || null);
   };
 
   useEffect(() => { load().catch((error) => showNotice('error', error.message)); }, []);
+  useEffect(() => {
+    if (scanMode) focusScanInput();
+  }, [scanMode]);
   useEffect(() => {
     const term = search.trim().toLowerCase();
     if (!term) return;
@@ -1245,9 +1266,10 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   };
 
   const printRow = async (row: MetroLabelRow, action: 'print' | 'reprint' = 'print') => {
+    setPreview(row);
     if (!printerName) {
       showNotice('info', 'Print agent not connected. Preview is ready.');
-      return;
+      return 'offline';
     }
     setBusy(true);
     try {
@@ -1256,13 +1278,73 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       await sendPrintJob(prepared.localAgentJob);
       await postJson('/metro-labeling/print/confirm', { id: row.id, printerName, type: 'zpl', action });
       showNotice('success', `${row.trackingNumber} sent to ${printerName}.`);
+      setLastPrinted({ trackingNumber: row.trackingNumber, at: new Date().toISOString(), printerName });
       await load();
+      return 'printed';
     } catch (error: any) {
       await postJson('/metro-labeling/print/confirm', { id: row.id, printerName, type: 'zpl', action, errorMessage: error.message }).catch(() => null);
-      showNotice('error', /agent|fetch|network/i.test(error.message) ? 'Print agent not connected. Preview is ready.' : error.message);
+      const offline = /agent|fetch|network|offline/i.test(error.message);
+      showNotice(offline ? 'info' : 'error', offline ? 'Print agent not connected. Preview is ready.' : error.message);
       await load().catch(() => null);
+      return offline ? 'offline' : 'error';
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleScan = async () => {
+    const trackingNumber = search.trim();
+    if (!trackingNumber) {
+      setScanStatus('Ready to scan');
+      focusScanInput();
+      return;
+    }
+    setScanStatus(autoPrintOnScan ? 'Printing...' : 'Ready to scan');
+    try {
+      const response = await postJson<{ row: MetroLabelRow; scannedAt: string }>('/metro-labeling/scan', { trackingNumber });
+      const row = normalizeMetroRow(response.row);
+      const alreadyPrinted = ['Printed', 'Reprinted'].includes(row.status);
+      setPreview(row);
+      setLastScanned({ trackingNumber, status: row.status || 'Found', at: response.scannedAt || new Date().toISOString() });
+
+      if (alreadyPrinted && !autoReprint) {
+        setScanStatus('Already printed');
+        showNotice('info', 'Already printed. Use Reprint if another label is needed.');
+        focusScanInput();
+        return;
+      }
+
+      if (alreadyPrinted && autoReprint && confirmBeforeReprint && !window.confirm('This label was already printed. Reprint it now?')) {
+        setScanStatus('Already printed');
+        focusScanInput();
+        return;
+      }
+
+      if (!autoPrintOnScan) {
+        setScanStatus('Ready to scan');
+        focusScanInput();
+        return;
+      }
+
+      const result = await printRow(row, alreadyPrinted ? 'reprint' : 'print');
+      if (result === 'printed') {
+        setScanStatus('Printed');
+        if (autoClearAfterPrint) setSearch('');
+      } else if (result === 'offline') {
+        setScanStatus('Printer offline');
+      } else {
+        setScanStatus('Printer offline');
+      }
+    } catch (error: any) {
+      if (error.status === 404 || /not found/i.test(error.message)) {
+        setScanStatus('Not found');
+        showNotice('error', 'Tracking not found');
+      } else {
+        setScanStatus('Printer offline');
+        showNotice('error', error.message);
+      }
+    } finally {
+      focusScanInput();
     }
   };
 
@@ -1274,6 +1356,15 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     }
     setSelected([]);
   };
+  const scanStatusClass = scanStatus === 'Printed'
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    : scanStatus === 'Printing...'
+      ? 'bg-amber-50 text-amber-800 border-amber-200'
+      : ['Not found', 'Printer offline'].includes(scanStatus)
+        ? 'bg-red-50 text-red-700 border-red-200'
+        : scanStatus === 'Already printed'
+          ? 'bg-slate-100 text-slate-700 border-slate-200'
+          : 'bg-cyan-50 text-broad-teal border-cyan-200';
 
   return (
     <PageStack>
@@ -1287,6 +1378,52 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
         <Kpi label="Pending Print" value={number(metroStats.pending)} helper="Ready to print" tone="amber" icon="printer" />
         <Kpi label="Printed Today" value={number(metroStats.printedToday)} helper="Printed or reprinted" tone="teal" icon="activity" />
         <Kpi label="Errors" value={number(metroStats.errors)} helper="Needs attention" tone={metroStats.errors ? 'red' : 'slate'} icon="report" />
+      </div>
+      <div className="card p-4 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
+          <div className="min-w-0 flex-1">
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <button
+                className={`button ${scanMode ? 'button-primary' : 'button-subtle'}`}
+                onClick={() => {
+                  setScanMode((value) => !value);
+                  setScanStatus('Ready to scan');
+                }}
+              >
+                {scanMode ? 'Scan Mode On' : 'Scan Mode Off'}
+              </button>
+              <span className={`rounded-full border px-3 py-1 text-xs font-black ${scanStatusClass}`}>{scanStatus}</span>
+              <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-black text-slate-600">{metroStats.pending} in print queue</span>
+            </div>
+            <label className="label">
+              Scan Tracking / Barcode
+              <input
+                ref={scanInputRef}
+                className={`input metro-scan-input ${scanStatus === 'Not found' ? 'metro-scan-error' : ''}`}
+                value={search}
+                placeholder="Scan tracking number and press Enter"
+                onChange={(event) => setSearch(event.target.value)}
+                onFocus={(event) => event.target.select()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handleScan();
+                  }
+                }}
+              />
+            </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:w-[420px]">
+            <MiniStatus label="Last Scanned" value={lastScanned ? `${lastScanned.trackingNumber} - ${lastScanned.status}` : 'None yet'} />
+            <MiniStatus label="Last Printed" value={lastPrinted ? `${lastPrinted.trackingNumber} - ${lastPrinted.printerName}` : 'None yet'} />
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <BooleanCheck label="Auto Print on Scan" checked={autoPrintOnScan} onChange={setAutoPrintOnScan} />
+          <BooleanCheck label="Auto Clear After Print" checked={autoClearAfterPrint} onChange={setAutoClearAfterPrint} />
+          <BooleanCheck label="Auto Reprint" checked={autoReprint} onChange={setAutoReprint} />
+          <BooleanCheck label="Confirm Before Reprint" checked={confirmBeforeReprint} onChange={setConfirmBeforeReprint} />
+        </div>
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
         <div className="card p-4 sm:p-5">
@@ -1351,7 +1488,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       </div>
       <div className="card p-4 sm:p-5">
         <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto_auto]">
-          <TextInput label="Search Tracking / Barcode" value={search} onChange={setSearch} />
+          <TextInput label="Queue Filter" value={search} onChange={setSearch} />
           <SelectInput label="Status" value={status} options={['', 'Uploaded', 'Pending Print', 'Printed', 'Reprinted', 'Error']} onChange={setStatus} />
           <button className="button lg:mt-6" onClick={() => load().catch((error) => showNotice('error', error.message))}>Apply</button>
           <button className="button button-primary lg:mt-6" disabled={busy} onClick={bulkPrint}>Print Selected</button>
@@ -2073,6 +2210,10 @@ function SecurityPage({ user, showNotice }: { user: User; showNotice: (type: Not
 
 function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: NoticeType, text: string) => void }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [health, setHealth] = useState<any>(null);
+  useEffect(() => {
+    api('/health').then(setHealth).catch(() => null);
+  }, []);
   const initialize = async () => {
     try {
       const response = await postJson<{ message: string }>('/health/initialize-google-tabs', {});
@@ -2090,6 +2231,11 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
           <MiniStatus label="Session" value="Protected" />
           <MiniStatus label="Access" value={user.role} />
         </div>
+        {health && !health.driveFolderConfigured && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+            Drive archive folder not configured. Metro imports still work, but original upload files will not be archived until Admin sets GOOGLE_DRIVE_FOLDER_ID.
+          </div>
+        )}
       </Panel>
       {user.role === 'Admin' && (
         <Panel title="Advanced setup">
