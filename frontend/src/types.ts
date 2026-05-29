@@ -1,4 +1,4 @@
-export type Role = 'Admin' | 'Supervisor' | 'Team Lead' | 'Scanner/User';
+export type Role = 'Admin' | 'Manager' | 'Supervisor' | 'User';
 
 export type SectionKey =
   | 'dashboard'
@@ -10,7 +10,8 @@ export type SectionKey =
   | 'users'
   | 'activity'
   | 'printer-setup'
-  | 'settings';
+  | 'settings'
+  | 'security';
 
 export type User = {
   id: string;
@@ -19,6 +20,7 @@ export type User = {
   role: Role;
   active: boolean;
   permissions: SectionKey[];
+  twoFactorEnabled?: boolean;
 };
 
 export type NoticeType = 'success' | 'error' | 'info';

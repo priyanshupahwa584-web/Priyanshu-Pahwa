@@ -36,8 +36,8 @@ const upload = multer({
 });
 
 function requireLabelUploader(req, res, next) {
-  if (['Admin', 'Supervisor', 'Team Lead'].includes(req.user?.role)) return next();
-  return res.status(403).json({ message: 'Only Admin, Supervisor, or Team Lead can upload label files.' });
+  if (['Admin', 'Manager', 'Supervisor'].includes(req.user?.role)) return next();
+  return res.status(403).json({ message: 'Only Admin, Manager, or Supervisor can upload label files.' });
 }
 
 function filterLabels(rows, query = {}) {

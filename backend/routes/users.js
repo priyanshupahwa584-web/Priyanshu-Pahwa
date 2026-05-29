@@ -1,7 +1,7 @@
 import express from 'express';
-import { authRequired, requireAccess } from '../middleware/auth.js';
+import { authRequired, requireAccess, requireAdmin } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
-import { createUser, listUsers, updateUser } from '../services/authService.js';
+import { createUser, listUsers, resetUserTwoFactor, revokeUserSessions, unlockUser, updateUser } from '../services/authService.js';
 import { roles, sections } from '../services/sheetSchema.js';
 import { userCreateSchema, userUpdateSchema } from '../utils/validation.js';
 
@@ -33,6 +33,38 @@ usersRouter.put('/:id', authRequired, requireAccess('users'), async (req, res, n
     if (!user) return res.status(404).json({ message: 'User not found.' });
     await audit({ actor: req.user.username, action: 'user_updated', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '' });
     res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.post('/:id/unlock', authRequired, requireAdmin, async (req, res, next) => {
+  try {
+    const user = await unlockUser(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    await audit({ actor: req.user.username, action: 'user_unlocked', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '' });
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.post('/:id/reset-2fa', authRequired, requireAdmin, async (req, res, next) => {
+  try {
+    const user = await resetUserTwoFactor(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    await audit({ actor: req.user.username, action: 'user_2fa_reset', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '' });
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+usersRouter.post('/:id/revoke-sessions', authRequired, requireAdmin, async (req, res, next) => {
+  try {
+    const revoked = await revokeUserSessions(req.params.id, req.user.username);
+    await audit({ actor: req.user.username, action: 'user_sessions_revoked', entity: 'Users', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '', metadata: { revoked } });
+    res.json({ ok: true, revoked });
   } catch (error) {
     next(error);
   }

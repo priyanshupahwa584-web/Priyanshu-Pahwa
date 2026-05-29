@@ -6,7 +6,8 @@ export const tabs = {
   exports: 'ExportLogs',
   metroLabeling: 'MetroLabeling',
   fulfilmentReports: 'FulfilmentReports',
-  printLogs: 'PrintLogs'
+  printLogs: 'PrintLogs',
+  sessions: 'UserSessions'
 };
 
 export const sheetHeaders = {
@@ -36,7 +37,12 @@ export const sheetHeaders = {
     'lockedUntil',
     'lastLogin',
     'createdAt',
-    'updatedAt'
+    'updatedAt',
+    'twoFactorEnabled',
+    'twoFactorSecret',
+    'twoFactorPendingSecret',
+    'backupCodeHashes',
+    'passwordChangedAt'
   ],
   [tabs.audit]: ['id', 'actor', 'action', 'entity', 'entityId', 'ip', 'device', 'metadata', 'createdAt'],
   [tabs.uploads]: ['id', 'fileName', 'mimeType', 'driveFileId', 'size', 'uploadedBy', 'status', 'message', 'createdAt'],
@@ -81,10 +87,22 @@ export const sheetHeaders = {
     'printerName',
     'timestamp',
     'errorMessage'
+  ],
+  [tabs.sessions]: [
+    'id',
+    'userId',
+    'username',
+    'device',
+    'ip',
+    'createdAt',
+    'lastSeenAt',
+    'expiresAt',
+    'revokedAt',
+    'revokedBy'
   ]
 };
 
-export const roles = ['Admin', 'Supervisor', 'Team Lead', 'Scanner/User'];
+export const roles = ['Admin', 'Manager', 'Supervisor', 'User'];
 
 export const sections = [
   'dashboard',
@@ -96,12 +114,13 @@ export const sections = [
   'users',
   'activity',
   'printer-setup',
-  'settings'
+  'settings',
+  'security'
 ];
 
 export const defaultPermissionsByRole = {
   Admin: sections,
-  Supervisor: ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'activity', 'printer-setup'],
-  'Team Lead': ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'activity', 'printer-setup'],
-  'Scanner/User': ['dashboard']
+  Manager: ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'activity', 'printer-setup', 'security'],
+  Supervisor: ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'activity', 'printer-setup', 'security'],
+  User: ['dashboard', 'security']
 };

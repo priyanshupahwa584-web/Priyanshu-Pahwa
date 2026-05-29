@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { key: 'fulfilment', label: 'Fulfilment Reports', path: '/fulfilment-reports', icon: 'report', subtitle: 'Generate and export completion reports.' },
   { key: 'users', label: 'Users', path: '/users', icon: 'users', subtitle: 'Manage team access and roles.' },
   { key: 'activity', label: 'Activity Logs', path: '/activity', icon: 'activity', subtitle: 'Review system activity and print history.' },
+  { key: 'security', label: 'My Security', path: '/security', icon: 'settings', subtitle: 'Manage password, two-factor authentication, and active sessions.' },
   { key: 'imports', label: 'Files & Reports', path: '/imports', icon: 'import', sidebar: false, subtitle: 'Upload and review operational files.' },
   { key: 'exports', label: 'Files & Reports', path: '/exports', icon: 'export', sidebar: false, subtitle: 'Create and download report files.' },
   { key: 'printer-setup', label: 'Printer Setup', path: '/printer-setup', icon: 'printer', sidebar: false, subtitle: 'Choose and test the label printer for this workstation.' },
@@ -36,7 +37,8 @@ const pageSubtitles: Partial<Record<SectionKey, string>> = {
   users: 'Manage team access and roles.',
   activity: 'Leadership view of performance, peaks, and facility movement.',
   'printer-setup': 'Printer Setup',
-  settings: 'Manage platform preferences and system setup.'
+  settings: 'Manage platform preferences and system setup.',
+  security: 'Manage password, two-factor authentication, and active sessions.'
 };
 
 const sectionLabels: Partial<Record<SectionKey, string>> = {
@@ -49,10 +51,12 @@ const sectionLabels: Partial<Record<SectionKey, string>> = {
   users: 'Users',
   activity: 'Executive Summary',
   'printer-setup': 'Printer Setup',
-  settings: 'Settings'
+  settings: 'Settings',
+  security: 'My Security'
 };
 
 function canAccess(user: User, section: SectionKey) {
+  if (section === 'security') return true;
   return user.role === 'Admin' || user.permissions.includes(section);
 }
 
@@ -92,9 +96,10 @@ export default function App() {
         <Route path="/fulfilment-reports" element={<Guard user={user} section="fulfilment"><FulfilmentReportsPage showNotice={showNotice} /></Guard>} />
         <Route path="/imports" element={<Guard user={user} section="imports"><ImportsPage showNotice={showNotice} /></Guard>} />
         <Route path="/exports" element={<Guard user={user} section="exports"><ExportsPage showNotice={showNotice} /></Guard>} />
-        <Route path="/users" element={<Guard user={user} section="users"><UsersPage showNotice={showNotice} /></Guard>} />
+        <Route path="/users" element={<Guard user={user} section="users"><UsersPage currentUser={user} showNotice={showNotice} /></Guard>} />
         <Route path="/activity" element={<Guard user={user} section="activity"><ActivityPage /></Guard>} />
         <Route path="/printer-setup" element={<Guard user={user} section="printer-setup"><PrinterSetupPage showNotice={showNotice} /></Guard>} />
+        <Route path="/security" element={<SecurityPage user={user} showNotice={showNotice} />} />
         <Route path="/settings" element={<Guard user={user} section="settings"><SettingsPage user={user} showNotice={showNotice} /></Guard>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
@@ -115,6 +120,9 @@ function Splash() {
 
 function LoginScreen({ onLogin, notice, showNotice }: { onLogin: (user: User) => void; notice: Notice; showNotice: (type: NoticeType, text: string) => void }) {
   const [form, setForm] = useState({ username: '', password: '' });
+  const [secondFactor, setSecondFactor] = useState('');
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
@@ -126,12 +134,24 @@ function LoginScreen({ onLogin, notice, showNotice }: { onLogin: (user: User) =>
       showNotice('error', 'Enter your username and password.');
       return;
     }
+    if (requiresTwoFactor && !secondFactor.trim()) {
+      showNotice('error', useRecoveryCode ? 'Enter a recovery code.' : 'Enter your authenticator code.');
+      return;
+    }
     setBusy(true);
     try {
-      const response = await postJson<{ user: User }>('/auth/login', {
+      const response = await postJson<{ user?: User; requiresTwoFactor?: boolean; message?: string }>('/auth/login', {
         ...form,
+        totpCode: useRecoveryCode ? '' : secondFactor,
+        recoveryCode: useRecoveryCode ? secondFactor : '',
         rememberDevice: secureRememberAvailable && rememberDevice
       });
+      if (response.requiresTwoFactor) {
+        setRequiresTwoFactor(true);
+        showNotice('info', response.message || 'Enter your authenticator code.');
+        return;
+      }
+      if (!response.user) throw new Error('Login response was incomplete.');
       onLogin(response.user);
     } catch (error: any) {
       showNotice('error', error.status === 401 ? 'Invalid username or password.' : error.message);
@@ -161,14 +181,27 @@ function LoginScreen({ onLogin, notice, showNotice }: { onLogin: (user: User) =>
       <FormGrid cols="grid-cols-1">
         <TextInput label="Username" value={form.username} onChange={(username) => setForm({ ...form, username })} onEnter={submit} />
         <TextInput label="Password" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} onEnter={submit} />
+        {requiresTwoFactor && (
+          <TextInput
+            label={useRecoveryCode ? 'Recovery Code' : 'Authenticator Code'}
+            value={secondFactor}
+            onChange={setSecondFactor}
+            onEnter={submit}
+          />
+        )}
       </FormGrid>
+      {requiresTwoFactor && (
+        <button className="mt-3 text-sm font-bold text-broad-teal transition hover:text-broad-cyan" type="button" onClick={() => setUseRecoveryCode((value) => !value)}>
+          {useRecoveryCode ? 'Use authenticator code instead' : 'Use a recovery code'}
+        </button>
+      )}
       {secureRememberAvailable && (
         <label className="mt-4 flex items-center gap-2 text-sm font-semibold text-slate-600">
           <input checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} type="checkbox" />
           Remember this device
         </label>
       )}
-      <button className="button button-primary mt-6 w-full py-3" disabled={busy || !form.username.trim() || !form.password} onClick={submit}>
+      <button className="button button-primary mt-6 w-full py-3" disabled={busy || !form.username.trim() || !form.password || (requiresTwoFactor && !secondFactor.trim())} onClick={submit}>
         {busy && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
         {busy ? 'Authenticating...' : 'Sign In'}
       </button>
@@ -1071,16 +1104,16 @@ function ExportsPage({ showNotice }: { showNotice: (type: NoticeType, text: stri
   );
 }
 
-function UsersPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
+function UsersPage({ currentUser, showNotice }: { currentUser: User; showNotice: (type: NoticeType, text: string) => void }) {
   const [data, setData] = useState<any>({ users: [], roles: [], sections: [] });
-  const [form, setForm] = useState<any>({ username: '', displayName: '', password: '', role: 'Scanner/User', active: true, permissions: ['dashboard'] });
+  const [form, setForm] = useState<any>({ username: '', displayName: '', password: '', role: 'User', active: true, permissions: ['dashboard', 'security'] });
   const load = async () => setData(await api('/users'));
   useEffect(() => { load().catch((error) => showNotice('error', error.message)); }, []);
   const create = async () => {
     try {
       await postJson('/users', form);
       showNotice('success', 'User created.');
-      setForm({ username: '', displayName: '', password: '', role: 'Scanner/User', active: true, permissions: ['dashboard'] });
+      setForm({ username: '', displayName: '', password: '', role: 'User', active: true, permissions: ['dashboard', 'security'] });
       load();
     } catch (error: any) {
       showNotice('error', error.message);
@@ -1090,6 +1123,15 @@ function UsersPage({ showNotice }: { showNotice: (type: NoticeType, text: string
     await putJson(`/users/${user.id}`, user);
     showNotice('success', 'User updated.');
     load();
+  };
+  const adminSecurityAction = async (path: string, message: string) => {
+    try {
+      await postJson(path, {});
+      showNotice('success', message);
+      load();
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
   };
   return (
     <PageStack>
@@ -1108,6 +1150,21 @@ function UsersPage({ showNotice }: { showNotice: (type: NoticeType, text: string
       <div className="grid gap-4">
         {data.users.map((user: any) => <UserCard key={user.id} user={user} roles={data.roles} sections={data.sections} onSave={save} />)}
       </div>
+      {currentUser.role === 'Admin' && (
+        <DataTable
+          title="Admin User Security"
+          rows={data.users}
+          columns={['username', 'role', 'twoFactorEnabled', 'failedLoginCount', 'lockedUntil', 'lastLogin']}
+          emptyText="No users found."
+          actions={(row) => (
+            <div className="flex flex-wrap gap-2">
+              <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/unlock`, 'User unlocked.')}>Unlock</button>
+              <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/reset-2fa`, 'Two-factor setup reset.')}>Reset 2FA</button>
+              <button className="button button-subtle" onClick={() => adminSecurityAction(`/users/${row.id}/revoke-sessions`, 'User sessions revoked.')}>Logout Devices</button>
+            </div>
+          )}
+        />
+      )}
     </PageStack>
   );
 }
@@ -1147,6 +1204,148 @@ function ActivityPage() {
       <DataTable title="Print History" rows={printLogs} columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'errorMessage']} emptyText="No print history yet." />
       <DataTable title="Import History" rows={uploads} columns={['createdAt', 'fileName', 'status', 'uploadedBy']} emptyText="No import history yet." />
       <DataTable title="Export History" rows={exportsLog} columns={['createdAt', 'format', 'rowCount', 'requestedBy']} emptyText="No export history yet." />
+    </PageStack>
+  );
+}
+
+function SecurityPage({ user, showNotice }: { user: User; showNotice: (type: NoticeType, text: string) => void }) {
+  const [profile, setProfile] = useState<any>({ sessions: [] });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '' });
+  const [setup, setSetup] = useState<any>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [disableCode, setDisableCode] = useState('');
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const load = async () => setProfile(await api('/auth/security'));
+  useEffect(() => { load().catch((error) => showNotice('error', error.message)); }, []);
+
+  const changePasswordAction = async () => {
+    try {
+      const response = await postJson<{ message: string }>('/auth/change-password', passwordForm);
+      showNotice('success', response.message);
+      setPasswordForm({ currentPassword: '', newPassword: '' });
+      load();
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const startSetup = async () => {
+    try {
+      setSetup(await postJson('/auth/2fa/setup', {}));
+      setRecoveryCodes([]);
+      showNotice('info', 'Add this account in your authenticator app, then verify the code.');
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const enable = async () => {
+    try {
+      const response = await postJson<{ message: string; recoveryCodes: string[] }>('/auth/2fa/enable', { code: twoFactorCode });
+      setRecoveryCodes(response.recoveryCodes || []);
+      setSetup(null);
+      setTwoFactorCode('');
+      showNotice('success', response.message);
+      load();
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const disable = async () => {
+    try {
+      const response = await postJson<{ message: string }>('/auth/2fa/disable', { code: disableCode });
+      setDisableCode('');
+      setRecoveryCodes([]);
+      showNotice('success', response.message);
+      load();
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const revokeSession = async (sessionId: string) => {
+    try {
+      await api(`/auth/sessions/${sessionId}`, { method: 'DELETE' });
+      showNotice('success', 'Session revoked.');
+      load();
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const logoutAll = async () => {
+    try {
+      const response = await postJson<{ revoked: number }>('/auth/logout-all', {});
+      showNotice('success', `${response.revoked} other session${response.revoked === 1 ? '' : 's'} signed out.`);
+      load();
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  return (
+    <PageStack>
+      <PageHeader title="My Security" subtitle="Manage password, two-factor authentication, and active sessions." />
+      <div className="grid gap-4 md:grid-cols-3">
+        <MiniStatus label="Role" value={user.role} />
+        <MiniStatus label="Two-factor" value={profile.twoFactorEnabled ? 'Enabled' : 'Not enabled'} />
+        <MiniStatus label="Recovery codes" value={`${profile.recoveryCodesRemaining || 0} remaining`} />
+      </div>
+      <FormCard title="Change Password">
+        <FormGrid cols="grid-cols-1 md:grid-cols-2">
+          <TextInput label="Current Password" type="password" value={passwordForm.currentPassword} onChange={(currentPassword) => setPasswordForm({ ...passwordForm, currentPassword })} />
+          <TextInput label="New Password" type="password" value={passwordForm.newPassword} onChange={(newPassword) => setPasswordForm({ ...passwordForm, newPassword })} />
+        </FormGrid>
+        <button className="button button-primary mt-4" onClick={changePasswordAction} disabled={!passwordForm.currentPassword || passwordForm.newPassword.length < 8}>Change Password</button>
+      </FormCard>
+      <Panel title="Enable 2FA">
+        <p className="text-sm font-semibold text-slate-600">Use an authenticator app to add a second verification step at login.</p>
+        {!profile.twoFactorEnabled && !setup && <button className="button button-primary mt-4" onClick={startSetup}>Start 2FA Setup</button>}
+        {setup && (
+          <div className="mt-4 grid gap-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Manual setup key</div>
+              <div className="mt-2 break-all font-mono text-sm font-bold text-slate-900">{setup.secret}</div>
+              <div className="mt-3 text-xs font-semibold text-slate-500">Authenticator URI</div>
+              <div className="mt-1 break-all font-mono text-xs text-slate-600">{setup.otpauthUrl}</div>
+            </div>
+            <FormGrid cols="grid-cols-1 md:grid-cols-[1fr_auto]">
+              <TextInput label="Authenticator Code" value={twoFactorCode} onChange={setTwoFactorCode} />
+              <button className="button button-primary self-end" onClick={enable} disabled={twoFactorCode.length < 6}>Enable 2FA</button>
+            </FormGrid>
+          </div>
+        )}
+        {profile.twoFactorEnabled && (
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="font-bold text-emerald-800">Two-factor authentication is enabled.</div>
+            <FormGrid cols="mt-4 grid-cols-1 md:grid-cols-[1fr_auto]">
+              <TextInput label="Authenticator Code" value={disableCode} onChange={setDisableCode} />
+              <button className="button self-end" onClick={disable} disabled={disableCode.length < 6}>Disable 2FA</button>
+            </FormGrid>
+          </div>
+        )}
+        {recoveryCodes.length > 0 && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="font-black text-amber-900">Save these recovery codes now. They will not be shown again.</div>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {recoveryCodes.map((code) => <div key={code} className="rounded-lg bg-white px-3 py-2 font-mono text-sm font-bold text-slate-900">{code}</div>)}
+            </div>
+          </div>
+        )}
+      </Panel>
+      <Panel title="Active Sessions">
+        <div className="mb-4 flex justify-end">
+          <button className="button" onClick={logoutAll}>Logout From All Other Devices</button>
+        </div>
+        <DataTable
+          title="Devices"
+          rows={profile.sessions || []}
+          columns={['createdAt', 'lastSeenAt', 'ip', 'device']}
+          emptyText="No active sessions found."
+          actions={(row) => <button className="button button-subtle" disabled={row.id === profile.currentSessionId} onClick={() => revokeSession(row.id)}>{row.id === profile.currentSessionId ? 'Current' : 'Revoke'}</button>}
+        />
+      </Panel>
     </PageStack>
   );
 }

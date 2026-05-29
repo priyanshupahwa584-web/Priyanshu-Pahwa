@@ -4,7 +4,18 @@ import { roles, sections } from '../services/sheetSchema.js';
 export const loginSchema = z.object({
   username: z.string().trim().min(1).max(80),
   password: z.string().min(1).max(200),
-  rememberDevice: z.boolean().optional().default(false)
+  rememberDevice: z.boolean().optional().default(false),
+  totpCode: z.string().trim().max(12).optional().default(''),
+  recoveryCode: z.string().trim().max(32).optional().default('')
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: z.string().min(8).max(200)
+});
+
+export const twoFactorCodeSchema = z.object({
+  code: z.string().trim().min(6).max(12)
 });
 
 export const dataRowSchema = z.object({

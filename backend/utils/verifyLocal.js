@@ -1,6 +1,6 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'local-verify-secret-change-in-production';
 process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'verify-admin';
-process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'verify-pass';
+process.env.ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || '$2b$12$TAm795CAPu9gMxViFpwf8.8O3TZiq5OlPd9PbroauIqoKpEHXTRzq';
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
 const { app } = await import('../server.js');
@@ -51,6 +51,10 @@ try {
   assert(result.response.status === 200, 'valid login failed');
   const cookie = result.response.headers.get('set-cookie')?.split(';')[0] || '';
   assert(cookie, 'valid login did not set session cookie');
+
+  result = await request(baseUrl, '/auth/security', { headers: { cookie } });
+  assert(result.response.status === 200, 'security profile route failed');
+  assert(Array.isArray(result.body.sessions), 'security profile should include sessions');
 
   result = await request(baseUrl, '/data', { headers: { cookie } });
   assert(result.response.status === 503, 'missing Google config should return 503 for data route');

@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { findUser, publicUser, verifyToken } from '../services/authService.js';
+import { findUser, publicUser, validateSession, verifyToken } from '../services/authService.js';
 
 export function cookieValue(req, name) {
   const cookies = Object.fromEntries(String(req.headers.cookie || '').split(';').map((part) => {
@@ -20,10 +20,20 @@ export function authRequired(req, res, next) {
       if (!user || String(user.active).toLowerCase() === 'false') {
         return res.status(401).json({ message: 'Session expired. Please sign in again.' });
       }
+      const session = await validateSession(user, payload.sid);
+      if (!session) return res.status(401).json({ message: 'Session expired. Please sign in again.' });
       req.user = publicUser(user);
+      req.user.sessionId = payload.sid;
+      req.sessionId = payload.sid;
+      req.session = session;
       return next();
     })
     .catch(() => res.status(401).json({ message: 'Session expired. Please sign in again.' }));
+}
+
+export function requireAdmin(req, res, next) {
+  if (req.user?.role === 'Admin') return next();
+  return res.status(403).json({ message: 'Admin access required.' });
 }
 
 export function requireAccess(section) {

@@ -52,10 +52,10 @@ export const config = {
   isProduction: process.env.NODE_ENV === 'production',
   jwtSecret: process.env.JWT_SECRET || generatedSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
+  sessionIdleMinutes: Number(process.env.SESSION_IDLE_MINUTES || 30),
   cookieName: 'br_session',
   adminUsername: process.env.ADMIN_USERNAME || '',
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH || '',
-  adminPassword: process.env.ADMIN_PASSWORD || '',
   google: {
     projectId: required('GOOGLE_PROJECT_ID'),
     clientEmail: required('GOOGLE_CLIENT_EMAIL'),

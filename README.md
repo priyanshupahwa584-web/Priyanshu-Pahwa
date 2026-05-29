@@ -6,7 +6,7 @@ Secure production web application for Broadreach operations data, Metro labeling
 
 - Frontend: React + Vite + TypeScript + Tailwind + Recharts
 - Backend: Node.js + Express
-- Auth: username/password, bcrypt hashes, JWT session cookie
+- Auth: username/password, bcrypt hashes only, JWT session cookie, TOTP 2FA, recovery codes, and tracked sessions
 - Data source: Google Sheets API
 - File storage: Google Drive API
 - Local label printing: Broadreach Windows Print Agent on each printing workstation
@@ -27,6 +27,7 @@ The app can initialize these tabs from Settings after credentials are configured
 - `MetroLabeling`
 - `FulfilmentReports`
 - `PrintLogs`
+- `UserSessions`
 
 ### MetroLabeling
 
@@ -53,6 +54,7 @@ Copy `.env.example` to `.env` for local development, set frontend variables in V
 ```bash
 PORT=4000
 JWT_SECRET=replace-with-long-random-secret
+SESSION_IDLE_MINUTES=30
 ADMIN_USERNAME=Priyanshu
 ADMIN_PASSWORD_HASH=replace-with-bcrypt-hash
 GOOGLE_PROJECT_ID=your-project-id
@@ -93,6 +95,13 @@ VITE_API_URL=<your-local-backend-url>
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
+- `GET /api/auth/security`
+- `POST /api/auth/change-password`
+- `POST /api/auth/2fa/setup`
+- `POST /api/auth/2fa/enable`
+- `POST /api/auth/2fa/disable`
+- `GET /api/auth/sessions`
+- `POST /api/auth/logout-all`
 - `GET /api/data`
 - `POST /api/data`
 - `PUT /api/data/:id`
@@ -122,9 +131,13 @@ VITE_API_URL=<your-local-backend-url>
 - CORS allowlist
 - Same-origin write protection for cookie sessions
 - HTTPS required in production
+- Roles: Admin, Manager, Supervisor, User
 - Global and login rate limiting
 - Account lock after 5 failed attempts
 - Passwords stored as bcrypt hashes only
+- `ADMIN_PASSWORD` is not supported; use `ADMIN_PASSWORD_HASH` only
+- Authenticator-app 2FA with one-time recovery codes
+- Active device/session tracking with logout from all devices
 - JWT stored in HTTP-only cookie
 - UI inactivity timeout after 30 minutes
 - Role/page access enforced by backend middleware
