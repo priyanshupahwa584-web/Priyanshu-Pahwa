@@ -57,6 +57,7 @@ JWT_SECRET=replace-with-long-random-secret
 SESSION_IDLE_MINUTES=30
 ADMIN_USERNAME=Priyanshu
 ADMIN_PASSWORD_HASH=replace-with-bcrypt-hash
+GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"service-account@project.iam.gserviceaccount.com"}'
 GOOGLE_PROJECT_ID=your-project-id
 GOOGLE_CLIENT_EMAIL=service-account@project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
@@ -73,6 +74,8 @@ node -e "import bcrypt from 'bcryptjs'; console.log(await bcrypt.hash('your-pass
 ```
 
 No default password is shipped.
+
+Google credentials can be provided either as `GOOGLE_SERVICE_ACCOUNT_JSON` from the full service account file, or as `GOOGLE_CLIENT_EMAIL` plus `GOOGLE_PRIVATE_KEY`. If both are present, `GOOGLE_SERVICE_ACCOUNT_JSON` is used first.
 
 ## Local Run
 
@@ -227,7 +230,7 @@ Render settings:
 - Build Command: `npm install`
 - Start Command: `npm start`
 - Environment: Node
-- Required production env: `NODE_ENV=production`, `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, Google service account values, `GOOGLE_SHEET_ID`, `GOOGLE_DRIVE_FOLDER_ID`
+- Required production env: `NODE_ENV=production`, `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `GOOGLE_SERVICE_ACCOUNT_JSON` or split Google service account values, `GOOGLE_SHEET_ID`, `GOOGLE_DRIVE_FOLDER_ID`
 - CORS: set `CORS_ORIGIN` to your exact Vercel frontend URL. If omitted in production, the backend allows `https://*.vercel.app` as a safe Vercel fallback.
 
 ```bash

@@ -18,7 +18,45 @@ function required(name) {
 }
 
 function parsePrivateKey(value) {
-  return value ? value.replace(/\\n/g, '\n') : '';
+  return value ? value.replace(/\\\\n/g, '\n').replace(/\\n/g, '\n') : '';
+}
+
+function parseServiceAccountJson(value) {
+  if (!value) return { credentials: null, error: '' };
+  try {
+    const parsed = JSON.parse(value);
+    return {
+      credentials: {
+        projectId: parsed.project_id || '',
+        clientEmail: parsed.client_email || '',
+        privateKey: parsePrivateKey(parsed.private_key || '')
+      },
+      error: ''
+    };
+  } catch {
+    return {
+      credentials: null,
+      error: 'GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON.'
+    };
+  }
+}
+
+function googleCredentials() {
+  const serviceAccount = parseServiceAccountJson(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '');
+  if (serviceAccount.credentials || serviceAccount.error) {
+    return {
+      projectId: serviceAccount.credentials?.projectId || required('GOOGLE_PROJECT_ID'),
+      clientEmail: serviceAccount.credentials?.clientEmail || '',
+      privateKey: serviceAccount.credentials?.privateKey || '',
+      configError: serviceAccount.error
+    };
+  }
+  return {
+    projectId: required('GOOGLE_PROJECT_ID'),
+    clientEmail: required('GOOGLE_CLIENT_EMAIL'),
+    privateKey: parsePrivateKey(required('GOOGLE_PRIVATE_KEY')),
+    configError: ''
+  };
 }
 
 function packageVersion() {
@@ -41,6 +79,7 @@ function configuredCorsOrigins() {
 }
 
 const generatedSecret = crypto.randomBytes(48).toString('hex');
+const resolvedGoogleCredentials = googleCredentials();
 
 export const config = {
   rootDir,
@@ -57,9 +96,10 @@ export const config = {
   adminUsername: process.env.ADMIN_USERNAME || '',
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH || '',
   google: {
-    projectId: required('GOOGLE_PROJECT_ID'),
-    clientEmail: required('GOOGLE_CLIENT_EMAIL'),
-    privateKey: parsePrivateKey(required('GOOGLE_PRIVATE_KEY')),
+    projectId: resolvedGoogleCredentials.projectId,
+    clientEmail: resolvedGoogleCredentials.clientEmail,
+    privateKey: resolvedGoogleCredentials.privateKey,
+    configError: resolvedGoogleCredentials.configError,
     sheetId: required('GOOGLE_SHEET_ID'),
     driveFolderId: required('GOOGLE_DRIVE_FOLDER_ID')
   },
@@ -81,5 +121,12 @@ export function isAllowedOrigin(origin) {
 }
 
 export function googleConfigured() {
-  return Boolean(config.google.clientEmail && config.google.privateKey && config.google.sheetId);
+  return Boolean(!config.google.configError && config.google.clientEmail && config.google.privateKey && config.google.sheetId);
+}
+
+export function googleConfigError() {
+  if (config.google.configError) return config.google.configError;
+  if (!config.google.clientEmail || !config.google.privateKey) return 'Google service account credentials are not configured on the server.';
+  if (!config.google.sheetId) return 'GOOGLE_SHEET_ID is not configured on the server.';
+  return '';
 }

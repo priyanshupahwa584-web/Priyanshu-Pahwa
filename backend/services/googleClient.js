@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import { config, googleConfigured } from '../config.js';
+import { config, googleConfigError, googleConfigured } from '../config.js';
 
 const scopes = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -10,7 +10,7 @@ let cachedAuth;
 
 export function getGoogleAuth() {
   if (!googleConfigured()) {
-    const error = new Error('Google Sheets/Drive credentials are not configured on the server.');
+    const error = new Error(googleConfigError() || 'Google Sheets/Drive credentials are not configured on the server.');
     error.statusCode = 503;
     throw error;
   }
