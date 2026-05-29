@@ -1,7 +1,7 @@
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'local-verify-secret-change-in-production';
-process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'verify-admin';
-process.env.ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || '$2b$12$TAm795CAPu9gMxViFpwf8.8O3TZiq5OlPd9PbroauIqoKpEHXTRzq';
-process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+process.env.JWT_SECRET = 'local-verify-secret-change-in-production';
+process.env.ADMIN_USERNAME = 'Priyanshu';
+process.env.ADMIN_PASSWORD_HASH = '$2b$12$VTUqGFUrsEhngu40BrKL/OCBC7Y0DyirENW464/9FCZPMej6pxrFe';
+process.env.NODE_ENV = 'test';
 
 const { app } = await import('../server.js');
 
@@ -35,18 +35,20 @@ const baseUrl = `http://127.0.0.1:${address.port}/api`;
 try {
   let result = await request(baseUrl, '/health');
   assert(result.response.status === 200, 'health endpoint failed');
+  assert(result.body.adminAuth?.configured === true, 'health endpoint should report admin auth configured');
+  assert(result.body.adminAuth?.passwordHashConfigured === true, 'health endpoint should report admin hash configured');
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
 
   result = await request(baseUrl, '/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username: 'verify-admin', password: 'wrong' })
+    body: JSON.stringify({ username: 'Priyanshu', password: 'wrong' })
   });
   assert(result.response.status === 401, 'invalid login should return 401');
   assert(/Invalid username or password/i.test(result.body.message), 'invalid login message should be clear');
 
   result = await request(baseUrl, '/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username: 'verify-admin', password: 'verify-pass' })
+    body: JSON.stringify({ username: 'Priyanshu', password: '7518' })
   });
   assert(result.response.status === 200, 'valid login failed');
   const cookie = result.response.headers.get('set-cookie')?.split(';')[0] || '';

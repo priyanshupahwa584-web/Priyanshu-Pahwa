@@ -8,6 +8,7 @@ import { id, nowIso } from '../utils/ids.js';
 
 const maxFailures = 5;
 const lockMs = 15 * 60 * 1000;
+const adminConfigErrorCode = 'admin_auth_config';
 const envAdminState = {
   failedLoginCount: 0,
   lockedUntil: '',
@@ -29,6 +30,29 @@ function canonicalRole(role) {
 
 function isEnvUser(user) {
   return user?.source === 'env' || user?.id === 'env_admin';
+}
+
+function isConfiguredAdminUsername(username) {
+  return Boolean(config.adminUsername) && String(username || '').toLowerCase() === config.adminUsername.toLowerCase();
+}
+
+function adminLoginConfigWarning(username) {
+  if (!isConfiguredAdminUsername(username)) return '';
+  if (!config.adminPasswordHash) return 'ADMIN_PASSWORD_HASH is not configured on the server.';
+  if (!/^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$/.test(config.adminPasswordHash)) {
+    return 'ADMIN_PASSWORD_HASH is not a valid bcrypt hash.';
+  }
+  return '';
+}
+
+export class AuthConfigurationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'AuthConfigurationError';
+    this.statusCode = 500;
+    this.code = adminConfigErrorCode;
+    this.safeMessage = 'Admin login is not configured. Set ADMIN_PASSWORD_HASH to a valid bcrypt hash.';
+  }
 }
 
 function parseJsonArray(value) {
@@ -94,7 +118,7 @@ export function verifyToken(token) {
 }
 
 export async function findUser(username) {
-  if (config.adminUsername && config.adminPasswordHash && username.toLowerCase() === config.adminUsername.toLowerCase()) {
+  if (isConfiguredAdminUsername(username) && config.adminPasswordHash) {
     return userWithEnvSecurity({
       id: 'env_admin',
       username: config.adminUsername,
@@ -153,6 +177,11 @@ async function verifySecondFactor(user, { totpCode, recoveryCode }) {
 }
 
 export async function authenticate({ username, password, totpCode = '', recoveryCode = '' }) {
+  const configWarning = adminLoginConfigWarning(username);
+  if (configWarning) {
+    console.error(`Admin auth configuration warning: ${configWarning}`);
+    throw new AuthConfigurationError(configWarning);
+  }
   const user = await findUser(username);
   if (!user || String(user.active).toLowerCase() === 'false') return { ok: false, reason: 'invalid' };
   if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) return { ok: false, reason: 'locked' };

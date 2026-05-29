@@ -81,6 +81,10 @@ function configuredCorsOrigins() {
 const generatedSecret = crypto.randomBytes(48).toString('hex');
 const resolvedGoogleCredentials = googleCredentials();
 
+function isBcryptHash(value) {
+  return /^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$/.test(String(value || ''));
+}
+
 export const config = {
   rootDir,
   frontendDist: path.join(rootDir, 'frontend', 'dist'),
@@ -108,6 +112,31 @@ export const config = {
   version: packageVersion(),
   buildDate: process.env.BUILD_DATE || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto' }).format(new Date())
 };
+
+export function adminAuthDiagnostic() {
+  const usernameConfigured = Boolean(config.adminUsername);
+  const passwordHashConfigured = Boolean(config.adminPasswordHash);
+  const passwordHashLooksValid = passwordHashConfigured && isBcryptHash(config.adminPasswordHash);
+  let warning = '';
+  if (!usernameConfigured) warning = 'ADMIN_USERNAME is not configured on the server.';
+  else if (!passwordHashConfigured) warning = 'ADMIN_PASSWORD_HASH is not configured on the server.';
+  else if (!passwordHashLooksValid) warning = 'ADMIN_PASSWORD_HASH is not a valid bcrypt hash.';
+  return {
+    usernameConfigured,
+    passwordHashConfigured,
+    passwordHashLooksValid,
+    configured: usernameConfigured && passwordHashLooksValid,
+    warning
+  };
+}
+
+export function adminAuthConfigured() {
+  return adminAuthDiagnostic().configured;
+}
+
+export function adminAuthConfigWarning() {
+  return adminAuthDiagnostic().warning;
+}
 
 export function isAllowedOrigin(origin) {
   if (!origin) return true;

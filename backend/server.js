@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { config, isAllowedOrigin } from './config.js';
+import { adminAuthConfigWarning, config, isAllowedOrigin } from './config.js';
 import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { dataRouter } from './routes/data.js';
@@ -80,6 +80,8 @@ app.use((_req, res) => {
 export function startServer(port = config.port) {
   return app.listen(port, () => {
     console.log(`Broadreach Operations Platform running on http://127.0.0.1:${port}`);
+    const authWarning = adminAuthConfigWarning();
+    if (authWarning) console.warn(`Auth configuration warning: ${authWarning}`);
   });
 }
 

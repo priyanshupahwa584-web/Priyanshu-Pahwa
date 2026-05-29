@@ -53,6 +53,10 @@ authRouter.post('/login', loginRateLimit, async (req, res, next) => {
     res.json({ user: result.user });
   } catch (error) {
     if (error?.name === 'ZodError') return next(error);
+    if (error?.code === 'admin_auth_config') {
+      console.error('Login route configuration failure:', error.message);
+      return res.status(500).json({ message: error.safeMessage || 'Admin login is not configured.' });
+    }
     console.error('Login route failed:', error);
     return res.status(500).json({ message: 'Login service error.' });
   }

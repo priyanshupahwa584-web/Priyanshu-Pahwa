@@ -1,5 +1,5 @@
 import express from 'express';
-import { config, googleConfigError, googleConfigured } from '../config.js';
+import { adminAuthDiagnostic, config, googleConfigError, googleConfigured } from '../config.js';
 import { authRequired, requireAccess } from '../middleware/auth.js';
 import { ensureCoreTabs } from '../services/googleSheets.js';
 
@@ -11,6 +11,7 @@ healthRouter.get('/', (_req, res) => {
     ok: true,
     version: config.version,
     buildDate: config.buildDate,
+    adminAuth: adminAuthDiagnostic(),
     googleConfigured: configured,
     googleConfigError: configured ? '' : googleConfigError(),
     dataSource: 'Google Sheets API',
