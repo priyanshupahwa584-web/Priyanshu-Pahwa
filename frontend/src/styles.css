@@ -145,6 +145,37 @@
     @apply border-slate-900 bg-slate-950 text-white hover:border-slate-900 hover:bg-slate-900 hover:text-white;
   }
 
+  .facility-pill-row {
+    @apply flex min-w-0 gap-2 overflow-x-auto pb-1;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(148 163 184 / 0.55) transparent;
+  }
+
+  .facility-pill-row::-webkit-scrollbar {
+    height: 0.45rem;
+  }
+
+  .facility-pill-row::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .facility-pill-row::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgb(148 163 184 / 0.45);
+  }
+
+  .facility-pill-row .filter-chip {
+    @apply shrink-0;
+  }
+
+  .chart-toolbar {
+    @apply inline-flex w-max max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-stone-200 bg-stone-50/90 p-1 shadow-sm;
+  }
+
+  .chart-toolbar-button {
+    @apply inline-flex h-9 min-w-9 shrink-0 items-center justify-center rounded-lg px-2 text-sm font-black text-slate-700 transition hover:bg-white hover:text-slate-950 hover:shadow-sm active:scale-95 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
   .skeleton-card {
     @apply h-36 animate-pulse rounded-xl border border-stone-200 bg-gradient-to-br from-white via-stone-100 to-white shadow-enterprise;
   }

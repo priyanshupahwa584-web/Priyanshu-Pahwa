@@ -13,13 +13,13 @@ type IconName = 'grid' | 'data' | 'label' | 'report' | 'import' | 'export' | 'us
 type NavItem = { key: SectionKey; label: string; path: string; icon: IconName; sidebar?: boolean; subtitle?: string };
 
 const navItems: NavItem[] = [
-  { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: 'grid', subtitle: 'Live overview of facility volume, trends, and exceptions.' },
-  { key: 'data', label: 'Facility Analytics', path: '/facility-analytics', icon: 'data', subtitle: 'Compare facility output, share, pace, and movement.' },
+  { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: 'grid', subtitle: 'Live facility volume, trends, and performance movement.' },
+  { key: 'data', label: 'Facility Operations', path: '/facility-operations', icon: 'data', subtitle: 'Live facility volume, trends, and performance movement.' },
   { key: 'activity', label: 'Executive Summary', path: '/executive-summary', icon: 'report', subtitle: 'Leadership view of performance, peaks, and facility movement.' },
-  { key: 'metro-labeling', label: 'Metro Labeling', path: '/metro-labeling', icon: 'label', subtitle: 'Upload, search, preview, and print Metro labels.' },
-  { key: 'fulfilment', label: 'Fulfilment Reports', path: '/fulfilment-reports', icon: 'report', subtitle: 'Generate and export completion reports.' },
+  { key: 'metro-labeling', label: 'Metro Labeling', path: '/metro-labeling', icon: 'label', sidebar: false, subtitle: 'Upload, search, preview, and print Metro labels.' },
+  { key: 'fulfilment', label: 'Fulfilment Reports', path: '/fulfilment-reports', icon: 'report', sidebar: false, subtitle: 'Generate and export completion reports.' },
   { key: 'users', label: 'Users', path: '/users', icon: 'users', subtitle: 'Manage team access and roles.' },
-  { key: 'activity', label: 'Activity Logs', path: '/activity', icon: 'activity', subtitle: 'Review system activity and print history.' },
+  { key: 'activity', label: 'Activity Logs', path: '/activity', icon: 'activity', sidebar: false, subtitle: 'Review system activity and print history.' },
   { key: 'security', label: 'My Security', path: '/security', icon: 'settings', subtitle: 'Manage password, two-factor authentication, and active sessions.' },
   { key: 'imports', label: 'Files & Reports', path: '/imports', icon: 'import', sidebar: false, subtitle: 'Upload and review operational files.' },
   { key: 'exports', label: 'Files & Reports', path: '/exports', icon: 'export', sidebar: false, subtitle: 'Create and download report files.' },
@@ -28,8 +28,8 @@ const navItems: NavItem[] = [
 ];
 
 const pageSubtitles: Partial<Record<SectionKey, string>> = {
-  dashboard: 'Live overview of facility volume, trends, and exceptions.',
-  data: 'Compare facility output, share, pace, and movement.',
+  dashboard: 'Live facility volume, trends, and performance movement.',
+  data: 'Live facility volume, trends, and performance movement.',
   'metro-labeling': 'Metro Labeling',
   fulfilment: 'Fulfilment Reports',
   imports: 'File Imports',
@@ -43,7 +43,7 @@ const pageSubtitles: Partial<Record<SectionKey, string>> = {
 
 const sectionLabels: Partial<Record<SectionKey, string>> = {
   dashboard: 'Dashboard',
-  data: 'Facility Analytics',
+  data: 'Facility Operations',
   'metro-labeling': 'Metro Labeling',
   fulfilment: 'Fulfilment Reports',
   imports: 'File Imports',
@@ -89,9 +89,10 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Guard user={user} section="dashboard"><DashboardPage showNotice={showNotice} /></Guard>} />
-        <Route path="/facility-analytics" element={<Guard user={user} section="data"><FacilityAnalyticsPage showNotice={showNotice} /></Guard>} />
+        <Route path="/facility-operations" element={<Guard user={user} section="data"><FacilityAnalyticsPage showNotice={showNotice} /></Guard>} />
+        <Route path="/facility-analytics" element={<Navigate to="/facility-operations" replace />} />
         <Route path="/executive-summary" element={<Guard user={user} section="activity"><ExecutiveSummaryPage showNotice={showNotice} /></Guard>} />
-        <Route path="/data" element={<Navigate to="/facility-analytics" replace />} />
+        <Route path="/data" element={<Navigate to="/facility-operations" replace />} />
         <Route path="/metro-labeling" element={<Guard user={user} section="metro-labeling"><MetroLabelingPage showNotice={showNotice} /></Guard>} />
         <Route path="/fulfilment-reports" element={<Guard user={user} section="fulfilment"><FulfilmentReportsPage showNotice={showNotice} /></Guard>} />
         <Route path="/imports" element={<Guard user={user} section="imports"><ImportsPage showNotice={showNotice} /></Guard>} />
@@ -288,7 +289,7 @@ function Shell({ user, setUser, notice, showNotice, children }: { user: User; se
   }, [location.pathname]);
 
   return (
-    <div className={`app-shell min-h-screen bg-broad-soft ${sidebarCollapsed ? 'app-shell-collapsed' : ''}`}>
+    <div className={`app-shell min-h-screen bg-[#f6f4ef] ${sidebarCollapsed ? 'app-shell-collapsed' : ''}`}>
       {mobileSidebarOpen && <button aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/45 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />}
       <aside className={`sidebar fixed inset-y-0 left-0 z-40 flex w-[292px] -translate-x-full flex-col bg-broad-navy px-5 py-5 text-white shadow-2xl transition duration-200 lg:sticky lg:top-0 lg:min-h-screen lg:translate-x-0 lg:shadow-none ${mobileSidebarOpen ? 'translate-x-0' : ''} ${sidebarCollapsed ? 'lg:w-[88px] lg:px-4' : ''}`}>
         <div className={`mb-6 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
@@ -387,41 +388,35 @@ function DashboardPage({ showNotice }: { showNotice: (type: NoticeType, text: st
     <PageStack>
       <PhaseHeader
         title="Facility Operations"
-        subtitle="Live overview of facility volume, trends, and exceptions."
-        meta={data?.source.latestDate ? `Latest date: ${formatShortDate(data.source.latestDate)}` : 'Live source'}
+        subtitle="Live facility volume, trends, and performance movement."
+        meta={data?.source.latestDate ? `Latest date: ${formatShortDate(data.source.latestDate)}` : 'Preparing view'}
         action={<button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh'}</button>}
       />
       <FacilityFilters data={data} duration={duration} setDuration={setDuration} selectedFacilities={selectedFacilities} setSelectedFacilities={setSelectedFacilities} compact />
       {busy && !data ? <DashboardSkeleton /> : data ? (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            <Kpi label="Total Packages" value={number(data.kpis.totalPackages)} icon="data" tone="teal" />
-            <Kpi label="Today Volume" value={number(data.kpis.currentTotal)} helper={data.source.latestDate ? formatShortDate(data.source.latestDate) : 'Latest operating day'} icon="activity" />
-            <Kpi label="Best Facility" value={data.kpis.bestFacility?.facility || 'N/A'} helper={data.kpis.bestFacility ? `${number(data.kpis.bestFacility.total)} packages` : undefined} icon="report" />
-            <Kpi label="Peak Day" value={data.kpis.peakDay ? formatShortDate(data.kpis.peakDay.date) : 'N/A'} helper={data.kpis.peakDay ? `${number(data.kpis.peakDay.total)} packages` : undefined} icon="activity" tone="amber" />
-            <Kpi label="Rolling Average" value={number(data.kpis.rollingAverage)} helper="Selected range pace" icon="grid" />
-            <Kpi label="Data Health" value={data.recordCount ? 'Ready' : 'Needs setup'} helper={data.recordCount ? `${number(data.recordCount)} records available` : 'No records found'} icon="data" tone={data.recordCount ? 'teal' : 'red'} />
-          </div>
+          <FacilityKpis data={data} />
           <FacilityLineChart title="Output Trend" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} />
         </>
-      ) : <EmptyState text="No facility data found. Connect the operations sheet to begin." actionLabel="Refresh data" onAction={load} />}
+      ) : <EmptyState text="No facility data found. Check connection or adjust filters." actionLabel="Refresh" onAction={load} />}
     </PageStack>
   );
 }
 
 function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
-  const analytics = useFacilityAnalytics(showNotice, { duration: 'Quarter', aggregation: 'Daily' });
+  const analytics = useFacilityAnalytics(showNotice, { duration: '30D', aggregation: 'Daily' });
   const { data, busy, duration, setDuration, aggregation, setAggregation, selectedFacilities, setSelectedFacilities, load } = analytics;
   const [chartType, setChartType] = useState('Line');
   const lineData = useChartWindow(data?.lineSeries || [], duration);
   return (
     <PageStack>
       <PhaseHeader
-        title="Facility Analytics"
-        subtitle="Compare facility performance across time, volume, and share."
+        title="Facility Operations"
+        subtitle="Live facility volume, trends, and performance movement."
         meta={data ? `${number(data.recordCount)} facility records` : 'Preparing analytics'}
         action={<button className="button button-primary" onClick={load} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh'}</button>}
       />
+      {data && <FacilityKpis data={data} />}
       <FacilityFilters
         data={data}
         duration={duration}
@@ -434,13 +429,13 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
       <div className="card flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Chart view</div>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Switch between trend, ranking, and share without leaving the page.</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">Switch between trend, facility ranking, and volume share.</p>
         </div>
         <Segmented value={chartType} options={chartTypeOptions} onChange={setChartType} />
       </div>
       {busy && !data ? <DashboardSkeleton /> : data ? (
         <div className="grid gap-5">
-          <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.75fr)]">
             <div className="min-w-0">
               {chartType === 'Line' && <FacilityLineChart title="Facility Trend Comparison" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} compareMode />}
               {chartType === 'Bar' && <FacilityBarChart data={data.barSeries} />}
@@ -455,7 +450,7 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
             emptyText="No facility totals yet."
           />
         </div>
-      ) : <EmptyState text="No facility data found. Connect the operations sheet to begin." actionLabel="Check connection" onAction={load} />}
+      ) : <EmptyState text="No facility data found. Check connection or adjust filters." actionLabel="Refresh" onAction={load} />}
     </PageStack>
   );
 }
@@ -487,7 +482,7 @@ function ExecutiveSummaryPage({ showNotice }: { showNotice: (type: NoticeType, t
             <InsightCard label="Lowest Facility" value={data.kpis.worstFacility?.facility || 'N/A'} detail={data.kpis.worstFacility ? `${number(data.kpis.worstFacility.total)} packages` : 'No low point yet'} tone="amber" />
             <InsightCard label="Highest Volume Day" value={data.kpis.peakDay ? formatShortDate(data.kpis.peakDay.date) : 'N/A'} detail={data.kpis.peakDay ? `${number(data.kpis.peakDay.total)} packages` : 'No peak day yet'} />
             <InsightCard label="Trend Direction" value={trendDirection} detail={`${signedNumber(data.kpis.delta)} latest movement`} tone={data.kpis.delta < 0 ? 'red' : 'teal'} />
-            <InsightCard label="Risk / Attention" value={data.kpis.delta < 0 ? 'Watch' : 'Normal'} detail={riskText} tone={data.kpis.delta < 0 ? 'red' : 'slate'} />
+            <InsightCard label="Attention Needed" value={data.kpis.delta < 0 ? 'Watch' : 'Normal'} detail={riskText} tone={data.kpis.delta < 0 ? 'red' : 'slate'} />
             <InsightCard label="Suggested Action" value="Next step" detail={suggestedAction} tone="slate" />
           </div>
           <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
@@ -500,7 +495,7 @@ function ExecutiveSummaryPage({ showNotice }: { showNotice: (type: NoticeType, t
           </div>
           <DataTable title="Peak Days" rows={data.peakDays} columns={['date', 'total']} emptyText="No peak days yet." />
         </>
-      ) : <EmptyState text="No facility data found. Connect the operations sheet to begin." actionLabel="Refresh data" onAction={load} />}
+      ) : <EmptyState text="No facility data found. Check connection or adjust filters." actionLabel="Refresh" onAction={load} />}
     </PageStack>
   );
 }
@@ -531,12 +526,24 @@ function useChartWindow(points: Array<Record<string, string | number>>, duration
 function PhaseHeader({ meta, action }: { title: string; subtitle: string; meta?: string; action?: ReactNode }) {
   if (!meta && !action) return null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-3 shadow-sm backdrop-blur">
-      <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Facility Operations</div>
+    <div className="flex flex-wrap items-center justify-end gap-3 rounded-2xl border border-stone-200/80 bg-white/85 px-4 py-3 shadow-sm backdrop-blur">
       <div className="flex flex-wrap items-center gap-3">
         {meta && <StatusPill text={meta} />}
         {action}
       </div>
+    </div>
+  );
+}
+
+function FacilityKpis({ data }: { data: FacilityAnalytics }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <Kpi label="Total Packages" value={number(data.kpis.totalPackages)} icon="data" tone="teal" />
+      <Kpi label="Active Facilities" value={number(data.kpis.activeFacilities)} helper={`${number(data.facilities.length)} tracked`} icon="grid" />
+      <Kpi label="Top Facility" value={data.kpis.bestFacility?.facility || 'N/A'} helper={data.kpis.bestFacility ? `${number(data.kpis.bestFacility.total)} packages` : undefined} icon="report" />
+      <Kpi label="Lowest Facility" value={data.kpis.worstFacility?.facility || 'N/A'} helper={data.kpis.worstFacility ? `${number(data.kpis.worstFacility.total)} packages` : undefined} icon="activity" tone="amber" />
+      <Kpi label="Peak Day" value={data.kpis.peakDay ? formatShortDate(data.kpis.peakDay.date) : 'N/A'} helper={data.kpis.peakDay ? `${number(data.kpis.peakDay.total)} packages` : undefined} icon="activity" />
+      <Kpi label="30-Day Average" value={number(data.kpis.rollingAverage)} helper="Rolling pace" icon="data" tone="teal" />
     </div>
   );
 }
@@ -551,33 +558,51 @@ function FacilityFilters({ data, duration, setDuration, aggregation, setAggregat
   setSelectedFacilities: (value: string[]) => void;
   compact?: boolean;
 }) {
-  const topFacilities = data?.facilityTotals.slice(0, compact ? 5 : 10).map((row) => row.facility) || [];
+  const [facilitySearch, setFacilitySearch] = useState('');
+  const topFacilities = (data?.facilityTotals || [])
+    .map((row) => row.facility)
+    .filter((facility) => facility.toLowerCase().includes(facilitySearch.trim().toLowerCase()))
+    .slice(0, compact ? 8 : 18);
   const toggleFacility = (facility: string) => {
     setSelectedFacilities(selectedFacilities.includes(facility)
       ? selectedFacilities.filter((item) => item !== facility)
       : [...selectedFacilities, facility]);
   };
   return (
-    <div className="card p-4">
+    <div className="card p-4 lg:p-5">
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Range</span>
-          <Segmented value={duration} options={durationOptions} onChange={setDuration} />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+          <div className="flex min-w-0 flex-col gap-2">
+            <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Range</span>
+            <div className="overflow-x-auto pb-1">
+              <Segmented value={duration} options={durationOptions} onChange={setDuration} />
+            </div>
+          </div>
           {aggregation && setAggregation && (
-            <>
+            <div className="flex min-w-0 flex-col gap-2 xl:items-end">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Aggregation</span>
-              <Segmented value={aggregation} options={aggregationOptions} onChange={setAggregation} />
-            </>
+              <div className="overflow-x-auto pb-1">
+                <Segmented value={aggregation} options={aggregationOptions} onChange={setAggregation} />
+              </div>
+            </div>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs font-black uppercase tracking-[0.16em] text-slate-500">Facilities</span>
-          <button className={`filter-chip ${selectedFacilities.length === 0 ? 'filter-chip-active' : ''}`} onClick={() => setSelectedFacilities([])}>All</button>
-          {topFacilities.map((facility) => (
-            <button key={facility} className={`filter-chip ${selectedFacilities.includes(facility) ? 'filter-chip-active' : ''}`} onClick={() => toggleFacility(facility)}>
-              {facility}
-            </button>
-          ))}
+        <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
+          <label className="label">
+            Facility filter
+            <input className="input" value={facilitySearch} onChange={(event) => setFacilitySearch(event.target.value)} placeholder="Search facility" />
+          </label>
+          <div className="min-w-0">
+            <div className="facility-pill-row">
+              <button className={`filter-chip ${selectedFacilities.length === 0 ? 'filter-chip-active' : ''}`} onClick={() => setSelectedFacilities([])}>All</button>
+              {topFacilities.map((facility) => (
+                <button key={facility} className={`filter-chip ${selectedFacilities.includes(facility) ? 'filter-chip-active' : ''}`} onClick={() => toggleFacility(facility)} title={facility}>
+                  {facility}
+                </button>
+              ))}
+              {!topFacilities.length && <span className="px-3 py-2 text-sm font-semibold text-slate-500">No matching facilities.</span>}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -591,32 +616,55 @@ function FacilityLineChart({ title, data, facilities, allFacilities, compareMode
   allFacilities: string[];
   compareMode?: boolean;
 }) {
+  const [dragStart, setDragStart] = useState<number | null>(null);
   const lineKeys = compareMode
     ? (facilities.length ? facilities : allFacilities.slice(0, 4))
     : ['total', 'rollingAverage'];
+  const finishDrag = (clientX: number) => {
+    if (dragStart === null) return;
+    const distance = clientX - dragStart;
+    if (Math.abs(distance) > 36) {
+      if (distance > 0) data.panLeft();
+      else data.panRight();
+    }
+    setDragStart(null);
+  };
   return (
-    <div className="card p-5">
+    <div className="card p-5 lg:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h3 className="font-black uppercase tracking-[0.12em] text-slate-950">{title}</h3>
           <p className="mt-1 text-sm text-slate-500">Explore pace, movement, and rolling trend across the selected window.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="button button-subtle" onClick={data.zoomIn}>Zoom In</button>
-          <button className="button button-subtle" onClick={data.zoomOut}>Zoom Out</button>
-          <button className="button button-subtle" onClick={data.panLeft}>Pan Left</button>
-          <button className="button button-subtle" onClick={data.panRight}>Pan Right</button>
-          <button className="button" onClick={data.reset}>Reset Zoom</button>
+        <div className="chart-toolbar" aria-label="Chart controls">
+          <button className="chart-toolbar-button" onClick={data.zoomIn} title="Zoom in">+</button>
+          <button className="chart-toolbar-button" onClick={data.zoomOut} title="Zoom out">−</button>
+          <button className="chart-toolbar-button" onClick={data.panLeft} title="Pan left">←</button>
+          <button className="chart-toolbar-button" onClick={data.panRight} title="Pan right">→</button>
+          <button className="chart-toolbar-button min-w-16 px-3" onClick={data.reset} title="Reset zoom">Reset</button>
         </div>
       </div>
-      <div className="mt-5 h-[430px] min-h-[320px]">
+      <div
+        className="mt-5 h-[480px] min-h-[340px] cursor-grab select-none active:cursor-grabbing max-sm:h-[360px]"
+        onDoubleClick={data.reset}
+        onMouseDown={(event) => setDragStart(event.clientX)}
+        onMouseLeave={() => setDragStart(null)}
+        onMouseUp={(event) => finishDrag(event.clientX)}
+        onWheel={(event) => {
+          if (!data.points.length) return;
+          event.preventDefault();
+          if (event.deltaY < 0) data.zoomIn();
+          else data.zoomOut();
+        }}
+        title="Mouse wheel zooms. Drag left or right to pan. Double-click resets."
+      >
         {data.points.length ? (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data.points} margin={{ top: 18, right: 28, bottom: 12, left: 0 }}>
-              <CartesianGrid stroke="#e7edf5" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }} />
-              <YAxis tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }} />
-              <Tooltip formatter={(value, name) => [number(value), human(String(name))]} labelFormatter={(label) => `Date: ${label}`} />
+            <LineChart data={data.points} margin={{ top: 20, right: 30, bottom: 14, left: 4 }}>
+              <CartesianGrid stroke="#e9e3d8" strokeDasharray="4 6" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: '#475569', fontSize: 12, fontWeight: 800 }} tickMargin={12} />
+              <YAxis tick={{ fill: '#475569', fontSize: 12, fontWeight: 800 }} tickFormatter={(value) => compactNumber(value)} width={56} />
+              <Tooltip content={<FacilityTooltip />} />
               <Legend />
               {lineKeys.map((key, index) => (
                 <Line
@@ -625,15 +673,35 @@ function FacilityLineChart({ title, data, facilities, allFacilities, compareMode
                   type="monotone"
                   dataKey={key}
                   stroke={chartColors[index % chartColors.length]}
-                  strokeWidth={key === 'rollingAverage' ? 2 : 2.6}
+                  strokeWidth={key === 'rollingAverage' ? 2.2 : 2.8}
                   strokeDasharray={key === 'rollingAverage' ? '6 6' : undefined}
                   dot={data.points.length < 45 ? { r: 3 } : false}
-                  activeDot={{ r: 5 }}
+                  activeDot={{ r: 5.5, strokeWidth: 2 }}
                 />
               ))}
             </LineChart>
           </ResponsiveContainer>
-        ) : <EmptyState text="No chart data for this selection." />}
+        ) : <EmptyState text="No facility data found. Check connection or adjust filters." />}
+      </div>
+    </div>
+  );
+}
+
+function FacilityTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name?: string; value?: unknown; color?: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white/95 p-3 text-sm shadow-[0_18px_55px_rgba(17,24,39,0.16)] backdrop-blur">
+      <div className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-slate-500">Date {label}</div>
+      <div className="grid gap-1.5">
+        {payload.map((item) => (
+          <div key={`${item.name}-${item.value}`} className="flex items-center justify-between gap-6">
+            <span className="flex min-w-0 items-center gap-2 font-bold text-slate-700">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color || '#17324d' }} />
+              <span className="truncate">{human(String(item.name || 'Facility'))}</span>
+            </span>
+            <span className="font-black text-slate-950">{number(item.value)}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1481,7 +1549,7 @@ function PermissionChecks({ sections, value, onChange, disabled }: { sections: s
 }
 
 function PageStack({ children }: { children: ReactNode }) {
-  return <div className="mx-auto grid max-w-[1540px] gap-5">{children}</div>;
+  return <div className="mx-auto grid max-w-[1760px] gap-6">{children}</div>;
 }
 
 function PageHeader({ action }: { title: string; subtitle: string; action?: ReactNode }) {
@@ -1491,11 +1559,11 @@ function PageHeader({ action }: { title: string; subtitle: string; action?: Reac
 function Kpi({ label, value, helper, tone = 'slate', icon }: { label: string; value: string; helper?: string; tone?: 'slate' | 'teal' | 'amber' | 'red'; icon?: IconName }) {
   const accent = tone === 'teal' ? 'bg-cyan-50 text-broad-teal' : tone === 'amber' ? 'bg-amber-50 text-amber-700' : tone === 'red' ? 'bg-red-50 text-red-700' : 'bg-stone-100 text-slate-700';
   return (
-    <div className="card p-5">
+    <div className="card p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(46,38,26,0.1)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
-          <div className="mt-3 text-3xl font-black text-slate-950">{value}</div>
+          <div className="mt-3 truncate text-2xl font-black text-slate-950 2xl:text-3xl">{value}</div>
         </div>
         {icon && <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${accent}`}><NavIcon name={icon} /></div>}
       </div>
@@ -1522,7 +1590,7 @@ function MiniStatus({ label, value }: { label: string; value: string }) {
 }
 
 function StatusPill({ text }: { text: string }) {
-  return <span className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm font-bold text-slate-700">{text}</span>;
+  return <span className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm font-bold text-slate-700 shadow-sm">{text}</span>;
 }
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
@@ -1539,9 +1607,9 @@ function FormGrid({ children, cols = 'grid-cols-3' }: { children: ReactNode; col
 
 function Segmented({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
   return (
-    <div className="inline-flex overflow-hidden rounded-xl border border-stone-300 bg-stone-50 p-1 shadow-sm">
+    <div className="inline-flex w-max overflow-hidden rounded-xl border border-stone-300 bg-stone-50 p-1 shadow-sm">
       {options.map((option) => (
-        <button key={option} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${value === option ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-700 hover:bg-white hover:text-slate-950'}`} onClick={() => onChange(option)}>
+        <button key={option} className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-bold transition ${value === option ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-700 hover:bg-white hover:text-slate-950'}`} onClick={() => onChange(option)}>
           {option}
         </button>
       ))}
@@ -1608,7 +1676,7 @@ function DataTable({ title, rows, columns, actions, select, onRowClick, emptyTex
 
 function EmptyState({ text, actionLabel, onAction }: { text: string; actionLabel?: string; onAction?: () => void }) {
   return (
-    <div className="grid min-h-36 place-items-center rounded-xl border border-dashed border-stone-300 bg-gradient-to-br from-white to-stone-50 p-6 text-center shadow-sm">
+    <div className="grid min-h-36 place-items-center rounded-xl border border-stone-200 bg-gradient-to-br from-white to-stone-50 p-6 text-center shadow-sm">
       <div>
         <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-full bg-stone-100 text-slate-600">
           <NavIcon name="data" />
