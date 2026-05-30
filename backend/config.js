@@ -22,7 +22,7 @@ function parsePrivateKey(value) {
 }
 
 function parseServiceAccountJson(value) {
-  if (!value) return { credentials: null, error: '' };
+  if (!value) return { credentials: null, error: '', present: false };
   try {
     const parsed = JSON.parse(value);
     return {
@@ -31,12 +31,14 @@ function parseServiceAccountJson(value) {
         clientEmail: parsed.client_email || '',
         privateKey: parsePrivateKey(parsed.private_key || '')
       },
-      error: ''
+      error: '',
+      present: true
     };
   } catch {
     return {
       credentials: null,
-      error: 'GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON.'
+      error: 'GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON.',
+      present: true
     };
   }
 }
@@ -48,14 +50,18 @@ function googleCredentials() {
       projectId: serviceAccount.credentials?.projectId || required('GOOGLE_PROJECT_ID'),
       clientEmail: serviceAccount.credentials?.clientEmail || '',
       privateKey: serviceAccount.credentials?.privateKey || '',
-      configError: serviceAccount.error
+      configError: serviceAccount.error,
+      credentialsSource: 'GOOGLE_SERVICE_ACCOUNT_JSON',
+      serviceAccountJsonPresent: serviceAccount.present
     };
   }
   return {
     projectId: required('GOOGLE_PROJECT_ID'),
     clientEmail: required('GOOGLE_CLIENT_EMAIL'),
     privateKey: parsePrivateKey(required('GOOGLE_PRIVATE_KEY')),
-    configError: ''
+    configError: '',
+    credentialsSource: 'split_env',
+    serviceAccountJsonPresent: false
   };
 }
 
@@ -104,6 +110,8 @@ export const config = {
     clientEmail: resolvedGoogleCredentials.clientEmail,
     privateKey: resolvedGoogleCredentials.privateKey,
     configError: resolvedGoogleCredentials.configError,
+    credentialsSource: resolvedGoogleCredentials.credentialsSource,
+    serviceAccountJsonPresent: resolvedGoogleCredentials.serviceAccountJsonPresent,
     sheetId: required('GOOGLE_SHEET_ID'),
     driveFolderId: required('GOOGLE_DRIVE_FOLDER_ID')
   },

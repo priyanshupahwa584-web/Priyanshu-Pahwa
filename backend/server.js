@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { adminAuthConfigWarning, config, isAllowedOrigin } from './config.js';
+import { adminAuthConfigWarning, config, driveStorageConfigured, isAllowedOrigin } from './config.js';
 import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { dataRouter } from './routes/data.js';
@@ -15,6 +15,7 @@ import { importsRouter } from './routes/imports.js';
 import { labelsRouter } from './routes/labels.js';
 import { fulfilmentRouter } from './routes/fulfilment.js';
 import { logsRouter } from './routes/logs.js';
+import { systemRouter } from './routes/system.js';
 import { usersRouter } from './routes/users.js';
 import { apiRateLimit, enforceHttpsInProduction, errorHandler, sameOriginProtection } from './middleware/security.js';
 
@@ -59,6 +60,7 @@ app.use('/api/metro-labeling', labelsRouter);
 app.use('/api/fulfilment', fulfilmentRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/logs', logsRouter);
+app.use('/api/system', systemRouter);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ message: 'API route not found.' });
@@ -81,6 +83,8 @@ app.use((_req, res) => {
 export function startServer(port = config.port) {
   return app.listen(port, () => {
     console.log(`Broadreach Operations Platform running on http://127.0.0.1:${port}`);
+    console.log(`Drive storage configured: ${driveStorageConfigured()}`);
+    console.log(`Drive folder ID present: ${Boolean(config.google.driveFolderId)}`);
     const authWarning = adminAuthConfigWarning();
     if (authWarning) console.warn(`Auth configuration warning: ${authWarning}`);
   });

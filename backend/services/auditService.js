@@ -16,6 +16,7 @@ export async function audit({ actor = 'system', action, entity, entityId = '', i
       createdAt: nowIso()
     }]);
   } catch (error) {
+    if (error?.statusCode === 503 && ['folder_id_missing', 'google_credentials_missing'].includes(error.driveErrorCode)) return;
     if (error?.statusCode === 503 && String(error.message || '').includes('credentials are not configured')) return;
     console.error('Audit log failed:', error.message);
   }

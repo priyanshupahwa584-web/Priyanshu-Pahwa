@@ -1,12 +1,11 @@
 import fs from 'node:fs';
 import { config } from '../config.js';
 import { getDriveClient } from './googleClient.js';
+import { createDriveStorageError } from './driveDiagnostics.js';
 
 export function driveStorageRequiredError() {
   if (!config.google.driveFolderId) {
-    const error = new Error('GOOGLE_DRIVE_FOLDER_ID is not configured. Share the root BROPS Storage folder with the service account and set GOOGLE_DRIVE_FOLDER_ID.');
-    error.statusCode = 503;
-    return error;
+    return createDriveStorageError(null, { defaultCode: 'folder_id_missing' });
   }
   return null;
 }

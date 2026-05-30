@@ -38,6 +38,10 @@ try {
   assert(result.body.adminAuth?.configured === true, 'health endpoint should report admin auth configured');
   assert(result.body.adminAuth?.passwordHashConfigured === true, 'health endpoint should report admin hash configured');
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
+  assert(result.body.driveFolderIdPresent === false, 'health endpoint should report missing Drive folder ID in local verify');
+  assert(result.body.driveFolderAccessible === false, 'health endpoint should report Drive folder inaccessible without folder ID');
+  assert(result.body.serviceAccountEmail === '', 'health endpoint should not invent a service account email');
+  assert(result.body.driveErrorCode === 'folder_id_missing', 'health endpoint should report exact missing Drive folder ID code');
   assert(result.body.facilitySourceReadable === false, 'health endpoint should report Facility Sort source unreadable without Google config');
   assert(result.body.driveStorageConfigured === false, 'health endpoint should report missing Drive Excel storage in local verify');
   assert(result.body.driveStorageWritable === false, 'health endpoint should report Drive Excel storage unwritable without Google config');
@@ -72,6 +76,11 @@ try {
   result = await request(baseUrl, '/auth/security', { headers: { cookie } });
   assert(result.response.status === 200, 'security profile route failed');
   assert(Array.isArray(result.body.sessions), 'security profile should include sessions');
+
+  result = await request(baseUrl, '/system/drive-check', { headers: { cookie } });
+  assert(result.response.status === 503, 'drive check should report missing Drive config in local verify');
+  assert(result.body.driveErrorCode === 'folder_id_missing', 'drive check should return exact missing Drive folder ID code');
+  assert(result.body.configuredFolderId === '', 'drive check should show no configured folder ID in local verify');
 
   result = await request(baseUrl, '/data', { headers: { cookie } });
   assert(result.response.status === 503, 'missing Google config should return 503 for data route');

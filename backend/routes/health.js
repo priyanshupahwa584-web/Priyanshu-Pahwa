@@ -2,7 +2,8 @@ import express from 'express';
 import { adminAuthDiagnostic, config, facilitySourceConfigured, googleConfigError } from '../config.js';
 import { authRequired, requireAccess } from '../middleware/auth.js';
 import { checkFacilitySourceReadable } from '../services/facilityAnalyticsService.js';
-import { checkDriveExcelStorage, ensureCoreFiles } from '../services/driveExcelStore.js';
+import { ensureCoreFiles } from '../services/driveExcelStore.js';
+import { runDriveStorageDiagnostics } from '../services/driveDiagnostics.js';
 
 export const healthRouter = express.Router();
 
@@ -10,7 +11,7 @@ healthRouter.get('/', async (_req, res) => {
   const configured = facilitySourceConfigured();
   const [facilitySource, driveStorage] = await Promise.all([
     checkFacilitySourceReadable(),
-    checkDriveExcelStorage()
+    runDriveStorageDiagnostics({ writeProbe: true })
   ]);
   res.json({
     ok: true,
@@ -25,8 +26,19 @@ healthRouter.get('/', async (_req, res) => {
     driveFolderConfigured: Boolean(config.google.driveFolderId),
     driveStorageConfigured: driveStorage.driveStorageConfigured,
     driveStorageWritable: driveStorage.driveStorageWritable,
-    todayMetroFolder: driveStorage.todayMetroFolder,
-    driveStorageError: driveStorage.driveStorageError,
+    driveFolderIdPresent: driveStorage.driveFolderIdPresent,
+    driveFolderAccessible: driveStorage.driveFolderAccessible,
+    serviceAccountEmail: driveStorage.serviceAccountEmail,
+    serviceAccountSource: driveStorage.serviceAccountSource,
+    serviceAccountJsonPresent: driveStorage.serviceAccountJsonPresent,
+    driveErrorCode: driveStorage.driveErrorCode,
+    driveErrorMessage: driveStorage.driveErrorMessage,
+    driveErrorStatus: driveStorage.driveErrorStatus,
+    driveErrorReason: driveStorage.driveErrorReason,
+    driveStorageError: driveStorage.driveErrorMessage,
+    writeProbeAttempted: driveStorage.writeProbeAttempted,
+    writeProbeFolderCreated: driveStorage.writeProbeFolderCreated,
+    writeProbeFileCreated: driveStorage.writeProbeFileCreated,
     googleConfigError: configured ? '' : googleConfigError(),
     dataSource: 'Google Sheets API (Facility Operations Sort sheet read-only)',
     platformStorage: 'Google Drive Excel files',

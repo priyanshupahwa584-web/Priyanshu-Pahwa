@@ -1,9 +1,10 @@
 import { Readable } from 'node:stream';
 import ExcelJS from 'exceljs';
-import { config, driveStorageConfigError, driveStorageConfigured } from '../config.js';
+import { config, driveStorageConfigured } from '../config.js';
 import { getDriveClient } from './googleClient.js';
 import { ensureDriveFolderPath, uploadFileToDrive } from './googleDrive.js';
 import { readMasterFacilityRows } from './facilityAnalyticsService.js';
+import { createDriveStorageError, runDriveStorageDiagnostics } from './driveDiagnostics.js';
 import { sheetHeaders, tabs } from './sheetSchema.js';
 
 const xlsxMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -43,7 +44,7 @@ function driveError(message, statusCode = 503) {
 
 function requireDriveStorage() {
   if (driveStorageConfigured()) return;
-  throw driveError(driveStorageConfigError());
+  throw createDriveStorageError(null);
 }
 
 function escapeDriveQuery(value) {
@@ -452,36 +453,8 @@ export async function uploadMetroOriginal(file) {
 }
 
 export async function checkDriveExcelStorage() {
-  const result = {
-    driveStorageConfigured: driveStorageConfigured(),
-    driveStorageWritable: false,
-    todayMetroFolder: '',
-    driveStorageError: ''
-  };
-  if (!result.driveStorageConfigured) {
-    result.driveStorageError = driveStorageConfigError();
-    return result;
-  }
-  try {
-    const drive = getDriveClient();
-    const root = await drive.files.get(driveOptions({
-      fileId: config.google.driveFolderId,
-      fields: 'id,name,mimeType,capabilities(canAddChildren,canEdit)'
-    }));
-    const canWrite = Boolean(root.data.capabilities?.canAddChildren || root.data.capabilities?.canEdit);
-    result.driveStorageWritable = canWrite;
-    if (!canWrite) {
-      result.driveStorageError = 'GOOGLE_DRIVE_FOLDER_ID is not writable. Share the root BROPS Storage folder with the service account as an editor.';
-      return result;
-    }
-    const folder = await ensureDriveFolderPath(['Metro', today()]);
-    result.todayMetroFolder = folder.name || today();
-    return result;
-  } catch (error) {
-    const status = Number(error?.code || error?.response?.status || 0);
-    result.driveStorageError = status === 401 || status === 403 || status === 404
-      ? 'GOOGLE_DRIVE_FOLDER_ID is not accessible. Share the root BROPS Storage folder with the service account as an editor.'
-      : (error.message || 'Google Drive storage check failed.');
-    return result;
-  }
+  const result = await runDriveStorageDiagnostics({ writeProbe: true });
+  result.todayMetroFolder = result.driveStorageWritable ? today() : '';
+  result.driveStorageError = result.driveErrorMessage;
+  return result;
 }

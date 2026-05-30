@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import { config, isAllowedOrigin } from '../config.js';
+import { classifyDriveError } from '../services/driveDiagnostics.js';
 
 export const apiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -41,6 +42,12 @@ export function enforceHttpsInProduction(req, res, next) {
 }
 
 export function errorHandler(error, _req, res, _next) {
+  if (error?.driveErrorCode) {
+    return res.status(error.statusCode || 503).json({
+      message: error.driveErrorMessage || error.message,
+      driveErrorCode: error.driveErrorCode
+    });
+  }
   if (error?.statusCode) return res.status(error.statusCode).json({ message: error.message });
   if (error?.name === 'ZodError') return res.status(400).json({ message: 'Please check the form fields.', details: error.issues });
   if (error?.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ message: 'Upload file is too large.' });
@@ -48,10 +55,12 @@ export function errorHandler(error, _req, res, _next) {
   if (String(error.message || '').includes('CORS')) return res.status(403).json({ message: 'Request origin is not allowed.' });
   const upstreamStatus = Number(error?.code || error?.response?.status || 0);
   if (upstreamStatus === 401 || upstreamStatus === 403) {
-    return res.status(503).json({ message: 'Google storage is not accessible. Share the Facility Sort sheet as viewer and the BROPS Storage folder as editor with the service account.' });
+    const driveError = classifyDriveError(error);
+    return res.status(503).json({ message: driveError.driveErrorMessage, driveErrorCode: driveError.driveErrorCode });
   }
   if (upstreamStatus === 404) {
-    return res.status(503).json({ message: 'Google storage source was not found. Check the Facility Sort sheet and initialize Drive storage from Settings.' });
+    const driveError = classifyDriveError(error);
+    return res.status(503).json({ message: driveError.driveErrorMessage, driveErrorCode: driveError.driveErrorCode });
   }
   console.error(error);
   return res.status(500).json({ message: 'Server unavailable, please try again later.' });
