@@ -66,15 +66,27 @@ function googleCredentials() {
 }
 
 function driveOAuthCredentials() {
-  const clientId = required('GOOGLE_DRIVE_OAUTH_CLIENT_ID');
-  const clientSecret = required('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET');
-  const refreshToken = required('GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN');
-  const present = Boolean(clientId || clientSecret || refreshToken);
+  const clientId = String(required('GOOGLE_DRIVE_OAUTH_CLIENT_ID')).trim();
+  const clientSecret = String(required('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET')).trim();
+  const refreshToken = String(required('GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN')).trim();
+  const clientIdPresent = Boolean(clientId);
+  const clientSecretPresent = Boolean(clientSecret);
+  const refreshTokenPresent = Boolean(refreshToken);
+  const present = clientIdPresent || clientSecretPresent || refreshTokenPresent;
   const missing = [];
-  if (present && !clientId) missing.push('GOOGLE_DRIVE_OAUTH_CLIENT_ID');
-  if (present && !clientSecret) missing.push('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET');
-  if (present && !refreshToken) missing.push('GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN');
-  return { clientId, clientSecret, refreshToken, present, missing };
+  if (present && !clientIdPresent) missing.push('GOOGLE_DRIVE_OAUTH_CLIENT_ID');
+  if (present && !clientSecretPresent) missing.push('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET');
+  if (present && !refreshTokenPresent) missing.push('GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN');
+  return {
+    clientId,
+    clientSecret,
+    refreshToken,
+    clientIdPresent,
+    clientSecretPresent,
+    refreshTokenPresent,
+    present,
+    missing
+  };
 }
 
 function packageVersion() {
@@ -130,6 +142,9 @@ export const config = {
     driveOAuthClientId: resolvedDriveOAuthCredentials.clientId,
     driveOAuthClientSecret: resolvedDriveOAuthCredentials.clientSecret,
     driveOAuthRefreshToken: resolvedDriveOAuthCredentials.refreshToken,
+    driveOAuthClientIdPresent: resolvedDriveOAuthCredentials.clientIdPresent,
+    driveOAuthClientSecretPresent: resolvedDriveOAuthCredentials.clientSecretPresent,
+    driveOAuthRefreshTokenPresent: resolvedDriveOAuthCredentials.refreshTokenPresent,
     driveOAuthPresent: resolvedDriveOAuthCredentials.present,
     driveOAuthMissing: resolvedDriveOAuthCredentials.missing
   },
@@ -185,6 +200,25 @@ export function googleCredentialsConfigured() {
 
 export function driveOAuthConfigured() {
   return Boolean(config.google.driveOAuthClientId && config.google.driveOAuthClientSecret && config.google.driveOAuthRefreshToken);
+}
+
+export function driveOAuthClientConfigured() {
+  return Boolean(config.google.driveOAuthClientId && config.google.driveOAuthClientSecret);
+}
+
+export function driveOAuthRefreshTokenConfigured() {
+  return Boolean(config.google.driveOAuthRefreshToken);
+}
+
+export function driveOAuthDiagnostic() {
+  return {
+    oauthClientIdConfigured: Boolean(config.google.driveOAuthClientId),
+    oauthClientSecretConfigured: Boolean(config.google.driveOAuthClientSecret),
+    oauthClientConfigured: driveOAuthClientConfigured(),
+    oauthRefreshTokenConfigured: driveOAuthRefreshTokenConfigured(),
+    oauthConfigured: driveOAuthConfigured(),
+    oauthMissing: [...config.google.driveOAuthMissing]
+  };
 }
 
 export function driveAuthMode() {

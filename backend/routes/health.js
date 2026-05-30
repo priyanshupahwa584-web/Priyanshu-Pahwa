@@ -26,6 +26,8 @@ healthRouter.get('/', async (_req, res) => {
     driveFolderConfigured: Boolean(config.google.driveFolderId),
     driveStorageConfigured: driveStorage.driveStorageConfigured,
     driveAuthMode: driveStorage.driveAuthMode,
+    oauthClientConfigured: driveStorage.oauthClientConfigured,
+    oauthRefreshTokenConfigured: driveStorage.oauthRefreshTokenConfigured,
     driveStorageWritable: driveStorage.driveStorageWritable,
     driveFolderIdPresent: driveStorage.driveFolderIdPresent,
     driveFolderAccessible: driveStorage.driveFolderAccessible,

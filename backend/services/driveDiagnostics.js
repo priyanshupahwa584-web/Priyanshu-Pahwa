@@ -4,6 +4,7 @@ import {
   driveAuthMode,
   driveCredentialsConfigured,
   driveCredentialsError,
+  driveOAuthDiagnostic,
   driveStorageConfigured
 } from '../config.js';
 import { getDriveClient } from './googleClient.js';
@@ -18,11 +19,14 @@ function clone(value) {
 }
 
 function googleErrorDetails(error = {}) {
-  const responseError = error?.response?.data?.error || {};
+  const responseData = error?.response?.data || {};
+  const responseError = typeof responseData.error === 'object' && responseData.error !== null ? responseData.error : {};
+  const oauthError = typeof responseData.error === 'string' ? responseData.error : '';
+  const oauthErrorDescription = typeof responseData.error_description === 'string' ? responseData.error_description : '';
   const firstDetail = responseError.errors?.[0] || error?.errors?.[0] || {};
-  const message = String(responseError.message || error.message || '').replace(/\s+/g, ' ').trim().slice(0, 300);
-  const reason = String(firstDetail.reason || responseError.status || error.code || '').slice(0, 120);
-  const status = Number(error?.code || error?.response?.status || responseError.code || 0);
+  const message = String(responseError.message || oauthErrorDescription || error.message || oauthError || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  const reason = String(firstDetail.reason || oauthError || responseError.status || error.code || '').slice(0, 120);
+  const status = Number(error?.response?.status || responseError.code || error?.code || 0) || 0;
   return { message, reason, status };
 }
 
@@ -32,6 +36,7 @@ function driveMessage(code, detail = {}) {
   if (code === 'folder_id_missing') return 'GOOGLE_DRIVE_FOLDER_ID is not set.';
   if (code === 'google_credentials_missing') return driveCredentialsError() || 'Google Drive storage credentials are not configured.';
   if (code === 'drive_oauth_missing') return driveCredentialsError() || 'Google Drive OAuth credentials are not configured.';
+  if (code === 'drive_oauth_refresh_failed') return 'Google Drive OAuth refresh token failed. Regenerate GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN for the configured OAuth client.';
   if (code === 'drive_oauth_rejected') return 'Google Drive OAuth credentials were rejected. Regenerate GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN for the configured OAuth client.';
   if (code === 'service_account_mismatch') return `Google Drive rejected the configured service account (${email}). Verify GOOGLE_SERVICE_ACCOUNT_JSON is the same service account shared on the Drive folder.`;
   if (code === 'drive_api_disabled') return 'Google Drive API is disabled for the configured Google Cloud project.';
@@ -52,6 +57,11 @@ function driveMessage(code, detail = {}) {
 function looksLikeStorageQuotaExceeded(details) {
   const combined = `${details.reason} ${details.message}`.toLowerCase();
   return /storagequotaexceeded|storage quota|quota exceeded|service account.*quota|cannot.*own|ownership|my drive/.test(combined);
+}
+
+function looksLikeOAuthRefreshFailure(details) {
+  const combined = `${details.reason} ${details.message}`.toLowerCase();
+  return /invalid_grant|invalid_client|unauthorized_client|refresh token|token has been expired|token has been revoked/.test(combined);
 }
 
 export function classifyDriveError(error, context = {}) {
@@ -79,6 +89,8 @@ export function classifyDriveError(error, context = {}) {
     code = context.defaultCode;
   } else if (details.status === 404 || /file not found|not found/i.test(details.message)) {
     code = 'folder_not_accessible';
+  } else if (driveAuthMode() === 'oauth' && looksLikeOAuthRefreshFailure(details)) {
+    code = 'drive_oauth_refresh_failed';
   } else if (details.status === 401 || /invalid_grant|unauthorized_client|invalid client/i.test(combined)) {
     code = driveAuthMode() === 'oauth' ? 'drive_oauth_rejected' : 'service_account_mismatch';
   } else if (/accessnotconfigured|service_disabled|api.*disabled|has not been used|disabled/i.test(combined)) {
@@ -111,9 +123,16 @@ export function createDriveStorageError(error, context = {}) {
 }
 
 function baseDiagnostic() {
+  const oauth = driveOAuthDiagnostic();
   return {
     driveStorageConfigured: driveStorageConfigured(),
     driveAuthMode: driveAuthMode(),
+    oauthClientConfigured: oauth.oauthClientConfigured,
+    oauthRefreshTokenConfigured: oauth.oauthRefreshTokenConfigured,
+    oauthConfigured: oauth.oauthConfigured,
+    oauthClientIdConfigured: oauth.oauthClientIdConfigured,
+    oauthClientSecretConfigured: oauth.oauthClientSecretConfigured,
+    oauthMissing: oauth.oauthMissing,
     driveStorageWritable: false,
     driveFolderIdPresent: Boolean(config.google.driveFolderId),
     driveFolderAccessible: false,

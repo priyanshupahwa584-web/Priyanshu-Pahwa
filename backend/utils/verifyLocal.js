@@ -53,6 +53,8 @@ try {
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
   assert(result.body.driveFolderIdPresent === false, 'health endpoint should report missing Drive folder ID in local verify');
   assert(result.body.driveAuthMode === 'service_account', 'health endpoint should default Drive auth mode to service_account');
+  assert(result.body.oauthClientConfigured === false, 'health endpoint should report missing OAuth Drive client in local verify');
+  assert(result.body.oauthRefreshTokenConfigured === false, 'health endpoint should report missing OAuth Drive refresh token in local verify');
   assert(result.body.driveFolderAccessible === false, 'health endpoint should report Drive folder inaccessible without folder ID');
   assert(result.body.serviceAccountEmail === '', 'health endpoint should not invent a service account email');
   assert(result.body.driveErrorCode === 'folder_id_missing', 'health endpoint should report exact missing Drive folder ID code');
