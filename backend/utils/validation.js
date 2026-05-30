@@ -89,6 +89,7 @@ export const labelPrintSchema = z.object({
   trackingNumber: z.string().trim().optional().default(''),
   printerName: z.string().trim().max(180).optional().default(''),
   type: z.enum(['zpl', 'pdf']).optional().default('zpl'),
+  labelSize: z.enum(['4x2', '4x6']).optional().default('4x2'),
   action: z.enum(['print', 'reprint', 'test']).optional().default('print'),
   prepareOnly: z.boolean().optional().default(false),
   errorMessage: z.string().trim().max(1000).optional().default('')

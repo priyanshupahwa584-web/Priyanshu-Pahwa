@@ -3,7 +3,8 @@ import type { CSSProperties, DragEvent, FormEvent, KeyboardEvent, ReactNode } fr
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, clearAccessToken, downloadExport, downloadFromApi, postJson, putJson, storeAccessToken } from './services/api';
-import { checkAgent, checkAgentStatus, getAgentToken, getDefaultPrinter, getPrinters, saveAgentPrinter, sendPrintJob, setAgentToken } from './services/printAgent';
+import { checkAgent, checkAgentStatus, getAgentToken, getDefaultPrinter, getLabelSize, getPrinters, getPrintMode, saveAgentSettings, sendPrintJob, setAgentToken } from './services/printAgent';
+import type { LabelSize, PrintMode } from './services/printAgent';
 import type { FacilityAnalytics, FulfilmentReport, MetroLabelRow, Notice, NoticeType, OperationRow, SectionKey, User } from './types';
 
 const idleTimeoutMs = 30 * 60 * 1000;
@@ -24,7 +25,7 @@ const navItems: NavItem[] = [
   { key: 'security', label: 'My Security', path: '/security', icon: 'settings', subtitle: 'Manage password, two-factor authentication, and active sessions.' },
   { key: 'imports', label: 'Files & Reports', path: '/imports', icon: 'import', sidebar: false, subtitle: 'Upload and review operational files.' },
   { key: 'exports', label: 'Files & Reports', path: '/exports', icon: 'export', sidebar: false, subtitle: 'Create and download report files.' },
-  { key: 'printer-setup', label: 'Printer Setup', path: '/printer-setup', icon: 'printer', sidebar: false, subtitle: 'Choose and test the label printer for this workstation.' },
+  { key: 'printer-setup', label: 'Printer Setup', path: '/printer-setup', icon: 'printer', subtitle: 'Choose and test the label printer for this workstation.' },
   { key: 'settings', label: 'Settings', path: '/settings', icon: 'settings', subtitle: 'Manage platform preferences and system setup.' }
 ];
 
@@ -1379,8 +1380,12 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const printRow = async (row: MetroLabelRow, action: 'print' | 'reprint' = 'print') => {
     setPreview(row);
     const currentPrinter = printerName || getDefaultPrinter();
-    if (!currentPrinter || agentStatus !== 'Online') {
-      showNotice('info', 'Install and run BROPS Print Agent on this PC.');
+    if (agentStatus === 'Online' && !currentPrinter) {
+      showNotice('info', 'Select a printer before auto printing.');
+      return 'offline';
+    }
+    if (agentStatus !== 'Online') {
+      showNotice('info', 'Print agent not connected. Preview is ready.');
       return 'offline';
     }
     setBusy(true);
@@ -1424,9 +1429,9 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       const offline = /agent|fetch|network|offline/i.test(error.message);
       if (offline) {
         setAgentStatus('Offline');
-        setAgentMessage('Install and run BROPS Print Agent on this PC.');
+        setAgentMessage('Print agent not connected. Preview is ready.');
       }
-      showNotice(offline ? 'info' : 'error', offline ? 'Install and run BROPS Print Agent on this PC.' : error.message);
+      showNotice(offline ? 'info' : 'error', offline ? 'Print agent not connected. Preview is ready.' : error.message);
       return offline ? 'offline' : 'error';
     } finally {
       setBusy(false);
@@ -2015,8 +2020,10 @@ function FulfilmentReportsPage({ showNotice }: { showNotice: (type: NoticeType, 
 }
 
 function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text: string) => void }) {
-  const [token, setToken] = useState(getAgentToken());
+  const [token] = useState(getAgentToken());
   const [printer, setPrinter] = useState(getDefaultPrinter());
+  const [labelSize, setLabelSizeValue] = useState<LabelSize>(getLabelSize());
+  const [printMode, setPrintModeValue] = useState<PrintMode>(getPrintMode());
   const [printers, setPrinters] = useState<any[]>([]);
   const [status, setStatus] = useState<LocalAgentStatus>('Checking');
   const [statusMessage, setStatusMessage] = useState('Checking BROPS Print Agent...');
@@ -2028,20 +2035,20 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
       setAgentToken(token);
       const agent = await checkAgentStatus();
       setStatus(agent.status);
-      setStatusMessage(agent.message);
+      setStatusMessage(agent.status === 'Online' ? agent.message : 'Print agent not connected. Preview is ready.');
       if (agent.status !== 'Online') {
         setPrinters([]);
-        showNotice('info', agent.message);
+        showNotice('info', 'Print agent not connected. Preview is ready.');
         return;
       }
       const response = await getPrinters();
       setPrinters(response.printers || []);
-      setPrinter(printer || response.defaultPrinter || response.printers?.[0]?.Name || '');
+      setPrinter(printer || getDefaultPrinter() || response.defaultPrinter || '');
       showNotice('success', 'Print service is online.');
     } catch (error: any) {
       setStatus('Offline');
-      setStatusMessage('Install and run BROPS Print Agent on this PC.');
-      showNotice('info', 'Install and run BROPS Print Agent on this PC.');
+      setStatusMessage('Print agent not connected. Preview is ready.');
+      showNotice('info', 'Print agent not connected. Preview is ready.');
     } finally {
       setBusy(false);
     }
@@ -2052,21 +2059,35 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
   }, []);
 
   const savePrinter = async () => {
+    setAgentToken(token);
     try {
-      setAgentToken(token);
-      await saveAgentPrinter(printer);
-      showNotice('success', `Default label printer saved: ${printer}`);
-    } catch (error: any) {
-      showNotice('error', error.message);
+      await saveAgentSettings({ defaultPrinter: printer, labelSize, printMode });
+      showNotice('success', 'Printer settings saved.');
+    } catch {
+      showNotice('info', 'Printer settings saved locally. Print agent settings will sync when agent is online.');
     }
   };
 
   const testPrint = async () => {
-    if (!printer) return showNotice('error', 'Select a printer first.');
     setBusy(true);
     try {
       setAgentToken(token);
-      const prepared = await postJson<any>('/labels/print/test', { printerName: printer, type: 'zpl' });
+      if (printMode === 'Browser Preview') {
+        const prepared = await postJson<any>('/labels/print/test', { printerName: printer, type: 'pdf', labelSize });
+        if (!prepared.pdfBase64) throw new Error('PDF preview was not generated.');
+        window.open(`data:application/pdf;base64,${prepared.pdfBase64}`, '_blank', 'noopener,noreferrer');
+        showNotice('success', 'Test label preview opened.');
+        return;
+      }
+      if (!printer) {
+        showNotice('info', 'Select a printer before auto printing.');
+        return;
+      }
+      if (status !== 'Online') {
+        showNotice('info', 'Print agent not connected. Preview is ready.');
+        return;
+      }
+      const prepared = await postJson<any>('/labels/print/test', { printerName: printer, type: 'zpl', labelSize });
       await sendPrintJob(prepared.localAgentJob);
       showNotice('success', `Test label sent to ${printer}.`);
     } catch (error: any) {
@@ -2078,32 +2099,66 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
 
   return (
     <PageStack>
-      <PageHeader title="Printer Setup" subtitle="Choose and test the label printer for this workstation." action={<button className="button" disabled={busy} onClick={detect}>{busy ? 'Checking...' : 'Check Agent'}</button>} />
-      <div className="grid gap-5 xl:grid-cols-[1fr_0.85fr]">
-        <FormCard title="Printer Connection">
-          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
-            Install and run BROPS Print Agent on this PC. The app checks the local agent at <span className="font-mono">http://localhost:5055/health</span>.
-          </div>
-          <FormGrid cols="grid-cols-1">
-            <TextInput label="Printer Access Token" value={token} onChange={setToken} />
-            <SelectInput label="Default Label Printer" value={printer} options={['', ...printers.map((item) => item.Name)]} onChange={setPrinter} />
-          </FormGrid>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button className="button button-primary" disabled={busy} onClick={detect}>{busy ? 'Checking...' : 'Find Printers'}</button>
-            <button className="button" onClick={savePrinter}>Save Printer</button>
-            <button className="button" disabled={busy} onClick={testPrint}>Test 4x2 Label</button>
-          </div>
-        </FormCard>
-        <Panel title="Printer Status">
-          <div className="grid gap-3 text-sm text-slate-700">
-            <MiniStatus label="Status" value={status} />
+      <PageHeader title="Printer Setup" subtitle="Choose and test the label printer for this workstation." action={<button className="button" disabled={busy} onClick={detect}>{busy ? 'Checking...' : 'Refresh Printers'}</button>} />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div className="card p-4 sm:p-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <MiniStatus label="Print Agent Status" value={status} />
             <MiniStatus label="Selected Printer" value={printer || 'Not selected'} />
             <MiniStatus label="Agent URL" value="http://localhost:5055/health" />
-            {status !== 'Online' && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 font-bold text-amber-800">{statusMessage || 'Install and run BROPS Print Agent on this PC.'}</div>}
           </div>
-        </Panel>
+          {status !== 'Online' && (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">
+              {statusMessage || 'Print agent not connected. Preview is ready.'}
+            </div>
+          )}
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="label">
+              Selected Printer
+              <select className="input" value={printer} onChange={(event) => setPrinter(event.target.value)}>
+                <option value="">Select printer</option>
+                {printers.map((item) => <option key={item.Name} value={item.Name}>{item.Name}</option>)}
+              </select>
+            </label>
+            <label className="label">
+              Label Size
+              <select className="input" value={labelSize} onChange={(event) => setLabelSizeValue(event.target.value as LabelSize)}>
+                <option value="4x2">4x2</option>
+                <option value="4x6">4x6</option>
+              </select>
+            </label>
+            <label className="label">
+              Print Mode
+              <select className="input" value={printMode} onChange={(event) => setPrintModeValue(event.target.value as PrintMode)}>
+                <option value="Browser Preview">Browser Preview</option>
+                <option value="Local Print Agent">Local Print Agent</option>
+              </select>
+            </label>
+            <div className="grid gap-2 sm:grid-cols-2 md:self-end">
+              <button className="button" disabled={busy} onClick={detect}>{busy ? 'Checking...' : 'Refresh Printers'}</button>
+              <button className="button" disabled={busy} onClick={testPrint}>Test Print</button>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap justify-end gap-3">
+            <button className="button button-primary" onClick={savePrinter}>Save Printer Settings</button>
+          </div>
+        </div>
+        <div className="card p-4 sm:p-5">
+          <h3 className="font-black text-slate-950">Available Printers</h3>
+          <div className="mt-4 grid gap-2">
+            {printers.length ? printers.map((item) => (
+              <button
+                key={item.Name}
+                className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm font-bold transition ${printer === item.Name ? 'border-broad-teal bg-cyan-50 text-broad-teal' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}
+                onClick={() => setPrinter(item.Name)}
+              >
+                <span className="min-w-0 truncate">{item.Name}</span>
+                <span className="shrink-0 text-xs text-slate-500">{item.PrinterStatus || 'Ready'}</span>
+              </button>
+            )) : <EmptyState text="No printers found." />}
+          </div>
+        </div>
       </div>
-      <DataTable title="Available Printers" rows={printers} columns={['Name', 'PrinterStatus']} emptyText="No printers found." />
     </PageStack>
   );
 }

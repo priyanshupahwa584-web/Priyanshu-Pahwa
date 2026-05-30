@@ -3,7 +3,12 @@ import { PRINT_AGENT_URL } from './apiConfig';
 const agentBase = PRINT_AGENT_URL;
 const tokenKey = 'broadreach_print_agent_token';
 const printerKey = 'broadreach_default_printer';
+const labelSizeKey = 'broadreach_label_size';
+const printModeKey = 'broadreach_print_mode';
 const agentTimeoutMs = 1200;
+
+export type LabelSize = '4x2' | '4x6';
+export type PrintMode = 'Browser Preview' | 'Local Print Agent';
 
 export type PrinterInfo = {
   Name: string;
@@ -26,6 +31,24 @@ export function getDefaultPrinter() {
 
 export function setDefaultPrinter(printerName: string) {
   localStorage.setItem(printerKey, printerName);
+}
+
+export function getLabelSize(): LabelSize {
+  const value = localStorage.getItem(labelSizeKey);
+  return value === '4x6' ? '4x6' : '4x2';
+}
+
+export function setLabelSize(labelSize: LabelSize) {
+  localStorage.setItem(labelSizeKey, labelSize);
+}
+
+export function getPrintMode(): PrintMode {
+  const value = localStorage.getItem(printModeKey);
+  return value === 'Browser Preview' ? 'Browser Preview' : 'Local Print Agent';
+}
+
+export function setPrintMode(printMode: PrintMode) {
+  localStorage.setItem(printModeKey, printMode);
 }
 
 function timeoutSignal(timeoutMs = agentTimeoutMs) {
@@ -92,10 +115,16 @@ export async function getPrinters() {
 }
 
 export async function saveAgentPrinter(defaultPrinter: string) {
-  setDefaultPrinter(defaultPrinter);
+  return saveAgentSettings({ defaultPrinter });
+}
+
+export async function saveAgentSettings(settings: { defaultPrinter: string; labelSize?: LabelSize; printMode?: PrintMode }) {
+  setDefaultPrinter(settings.defaultPrinter);
+  if (settings.labelSize) setLabelSize(settings.labelSize);
+  if (settings.printMode) setPrintMode(settings.printMode);
   return agentFetch<{ ok: boolean; defaultPrinter: string }>('/settings', {
     method: 'POST',
-    body: JSON.stringify({ defaultPrinter })
+    body: JSON.stringify(settings)
   });
 }
 

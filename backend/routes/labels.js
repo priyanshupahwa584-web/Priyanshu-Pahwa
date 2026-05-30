@@ -268,7 +268,7 @@ labelsRouter.post('/print/test', authRequired, requireAccess('printer-setup'), a
       localAgentJob: {
         printerName: body.printerName,
         type: body.type,
-        labelSize: '4x2',
+        labelSize: body.labelSize,
         ...payload.label,
         zpl: payload.zpl,
         pdfBase64: payload.pdfBase64
@@ -299,7 +299,7 @@ labelsRouter.post('/print', authRequired, requireAccess('metro-labeling'), async
       localAgentJob: {
         printerName: body.printerName,
         type: body.type,
-        labelSize: '4x2',
+        labelSize: body.labelSize,
         ...payload.label,
         zpl: payload.zpl,
         pdfBase64: payload.pdfBase64
@@ -325,7 +325,7 @@ labelsRouter.post('/reprint', authRequired, requireAccess('metro-labeling'), asy
       localAgentJob: {
         printerName: body.printerName,
         type: body.type,
-        labelSize: '4x2',
+        labelSize: body.labelSize,
         ...payload.label,
         zpl: payload.zpl,
         pdfBase64: payload.pdfBase64
