@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import {
   adminAuthConfigWarning,
   config,
+  deploymentBuildMarker,
   driveAuthMode,
   driveOAuthDiagnostic,
   driveStorageConfigured,
@@ -91,6 +92,7 @@ export function startServer(port = config.port) {
   return app.listen(port, () => {
     const driveOAuth = driveOAuthDiagnostic();
     console.log(`Broadreach Operations Platform running on http://127.0.0.1:${port}`);
+    console.log(`BROPS build marker: ${deploymentBuildMarker}`);
     console.log(`Drive storage configured: ${driveStorageConfigured()}`);
     console.log(`Drive auth mode: ${driveAuthMode()}`);
     console.log(`GOOGLE_DRIVE_OAUTH_CLIENT_ID present: ${driveOAuth.oauthClientIdConfigured}`);

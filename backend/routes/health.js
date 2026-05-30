@@ -1,5 +1,13 @@
 import express from 'express';
-import { adminAuthDiagnostic, config, facilitySourceConfigured, googleConfigError } from '../config.js';
+import {
+  adminAuthDiagnostic,
+  config,
+  deploymentBuildMarker,
+  driveAuthMode,
+  driveOAuthDiagnostic,
+  facilitySourceConfigured,
+  googleConfigError
+} from '../config.js';
 import { authRequired, requireAccess } from '../middleware/auth.js';
 import { checkFacilitySourceReadable } from '../services/facilityAnalyticsService.js';
 import { ensureCoreFiles } from '../services/driveExcelStore.js';
@@ -9,6 +17,7 @@ export const healthRouter = express.Router();
 
 healthRouter.get('/', async (_req, res) => {
   const configured = facilitySourceConfigured();
+  const driveOAuth = driveOAuthDiagnostic();
   const [facilitySource, driveStorage] = await Promise.all([
     checkFacilitySourceReadable(),
     runDriveStorageDiagnostics({ writeProbe: true })
@@ -17,6 +26,7 @@ healthRouter.get('/', async (_req, res) => {
     ok: true,
     version: config.version,
     buildDate: config.buildDate,
+    deploymentBuildMarker,
     adminAuth: adminAuthDiagnostic(),
     googleConfigured: configured,
     facilitySourceConfigured: facilitySource.facilitySourceConfigured,
@@ -25,9 +35,9 @@ healthRouter.get('/', async (_req, res) => {
     facilitySourceError: facilitySource.facilitySourceError,
     driveFolderConfigured: Boolean(config.google.driveFolderId),
     driveStorageConfigured: driveStorage.driveStorageConfigured,
-    driveAuthMode: driveStorage.driveAuthMode,
-    oauthClientConfigured: driveStorage.oauthClientConfigured,
-    oauthRefreshTokenConfigured: driveStorage.oauthRefreshTokenConfigured,
+    driveAuthMode: driveStorage.driveAuthMode || driveAuthMode(),
+    oauthClientConfigured: driveStorage.oauthClientConfigured ?? driveOAuth.oauthClientConfigured,
+    oauthRefreshTokenConfigured: driveStorage.oauthRefreshTokenConfigured ?? driveOAuth.oauthRefreshTokenConfigured,
     driveStorageWritable: driveStorage.driveStorageWritable,
     driveFolderIdPresent: driveStorage.driveFolderIdPresent,
     driveFolderAccessible: driveStorage.driveFolderAccessible,

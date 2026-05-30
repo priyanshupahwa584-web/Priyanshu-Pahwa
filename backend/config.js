@@ -112,6 +112,8 @@ const generatedSecret = crypto.randomBytes(48).toString('hex');
 const resolvedGoogleCredentials = googleCredentials();
 const resolvedDriveOAuthCredentials = driveOAuthCredentials();
 
+export const deploymentBuildMarker = 'oauth-drive-diagnostics-e429a1a';
+
 function isBcryptHash(value) {
   return /^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$/.test(String(value || ''));
 }

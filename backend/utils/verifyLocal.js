@@ -48,6 +48,7 @@ const baseUrl = `http://127.0.0.1:${address.port}/api`;
 try {
   let result = await request(baseUrl, '/health');
   assert(result.response.status === 200, 'health endpoint failed');
+  assert(result.body.deploymentBuildMarker === 'oauth-drive-diagnostics-e429a1a', 'health endpoint should expose the deployment build marker');
   assert(result.body.adminAuth?.configured === true, 'health endpoint should report admin auth configured');
   assert(result.body.adminAuth?.passwordHashConfigured === true, 'health endpoint should report admin hash configured');
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
