@@ -1,4 +1,6 @@
 import { appendRows, readRows, replaceRows, updateRowById } from './driveExcelStore.js';
+import { buildXlsx, mimeFor } from './exportService.js';
+import { uploadBufferToDrive } from './googleDrive.js';
 import { tabs } from './sheetSchema.js';
 import { audit } from './auditService.js';
 import { id, nowIso } from '../utils/ids.js';
@@ -20,6 +22,7 @@ let failedDriveWrites = [];
 let activeDriveWrite = null;
 let lastDriveWriteMs = 0;
 let lastDriveWriteError = '';
+let lastCloseSummary = null;
 let queueSequence = 0;
 let coldStartDetected = true;
 
@@ -283,4 +286,65 @@ export function markMetroBatchClosed({ closedBy }) {
 export async function saveFinalMetroFiles(rows, printRows) {
   await replaceRows(tabs.metroLabeling, rows);
   await replaceRows(tabs.printLogs, printRows);
+}
+
+function latestUploadForRows(rows = [], uploadRows = []) {
+  const uploadedFileIds = new Set(rows.map((row) => row.uploadedFileId).filter(Boolean));
+  return uploadRows
+    .filter((row) => uploadedFileIds.has(row.driveFileId))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0] || null;
+}
+
+export async function buildMetroCloseSummary(rows = []) {
+  const uploadRows = await readRows(tabs.uploads).catch(() => []);
+  const latestUpload = latestUploadForRows(rows, uploadRows);
+  const printedRows = rows.filter((row) => ['Printed', 'Reprinted'].includes(String(row.status || '')));
+  const errorRows = rows.filter((row) => String(row.status || '') === 'Error');
+  const pendingRows = rows.filter((row) => !['Printed', 'Reprinted', 'Error'].includes(String(row.status || '')));
+  const reprints = rows.reduce((total, row) => total + Number(row.reprintCount || 0), 0);
+  return {
+    date: todayMetroDate(),
+    totalLabels: rows.length,
+    printed: printedRows.length,
+    pending: pendingRows.length,
+    errors: errorRows.length,
+    reprints,
+    uploadedFileName: latestUpload?.fileName || '',
+    uploadedFileId: latestUpload?.driveFileId || '',
+    generatedAt: nowIso()
+  };
+}
+
+export async function saveMetroCloseSummary(summary, { closedBy = '' } = {}) {
+  const rows = [{
+    date: summary.date,
+    totalLabels: summary.totalLabels,
+    printed: summary.printed,
+    pending: summary.pending,
+    errors: summary.errors,
+    reprints: summary.reprints,
+    uploadedFileName: summary.uploadedFileName,
+    uploadedFileId: summary.uploadedFileId,
+    closedBy,
+    closedAt: summary.closedAt || nowIso()
+  }];
+  const fileName = `metro_close_summary_${summary.date}.xlsx`;
+  const buffer = await buildXlsx(rows, {
+    report: 'Metro Close Summary',
+    closedBy,
+    closedAt: rows[0].closedAt,
+    rowCount: summary.totalLabels
+  });
+  const driveFile = await uploadBufferToDrive({
+    buffer,
+    fileName,
+    mimeType: mimeFor('xlsx'),
+    folderPath: ['Metro', summary.date]
+  });
+  lastCloseSummary = { summary: { ...summary, closedBy, closedAt: rows[0].closedAt }, rows, buffer, fileName, driveFile };
+  return { driveFile, fileName, buffer };
+}
+
+export function getLastCloseSummary() {
+  return lastCloseSummary;
 }

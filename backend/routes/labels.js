@@ -11,13 +11,19 @@ import { appendRows, readRows, updateRowById, uploadMetroOriginal } from '../ser
 import { parseMetroLabelFile } from '../services/labelImportService.js';
 import {
   enqueueDriveWrite,
+  buildMetroCloseSummary,
   findTodayMetroLabel,
+  flushDriveWriteQueue,
   getDriveWriteQueueStatus,
+  getLastCloseSummary,
   getMetroCacheSnapshot,
   invalidateMetroCache,
+  markMetroBatchClosed,
   readTodayMetroRows,
   recordMetroPrint,
-  retryFailedDriveWrites
+  retryFailedDriveWrites,
+  saveFinalMetroFiles,
+  saveMetroCloseSummary
 } from '../services/metroCacheService.js';
 import { tabs } from '../services/sheetSchema.js';
 import { buildPdfLabel, buildZplLabel, normalizeLabelPayload } from '../utils/label.js';
@@ -48,6 +54,11 @@ const upload = multer({
 function requireLabelUploader(req, res, next) {
   if (['Admin', 'Manager', 'Supervisor'].includes(req.user?.role)) return next();
   return res.status(403).json({ message: 'Only Admin, Manager, or Supervisor can upload label files.' });
+}
+
+function requireBatchCloser(req, res, next) {
+  if (['Admin', 'Manager', 'Supervisor'].includes(req.user?.role)) return next();
+  return res.status(403).json({ message: 'Only Admin, Manager, or Supervisor can close Metro batches.' });
 }
 
 function filterLabels(rows, query = {}) {
@@ -335,6 +346,60 @@ labelsRouter.get('/sync/status', authRequired, requireAccess('metro-labeling'), 
 
 labelsRouter.post('/sync/retry', authRequired, requireAccess('metro-labeling'), (_req, res) => {
   res.json({ retried: retryFailedDriveWrites(), ...getDriveWriteQueueStatus() });
+});
+
+labelsRouter.get('/batch/summary', authRequired, requireAccess('metro-labeling'), requireBatchCloser, async (_req, res, next) => {
+  try {
+    const rows = await readTodayMetroRows({ includeClosed: true });
+    const summary = await buildMetroCloseSummary(rows);
+    res.json({ summary, warning: summary.pending > 0 ? 'There are pending labels. Close anyway?' : '' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+labelsRouter.post('/batch/close', authRequired, requireAccess('metro-labeling'), requireBatchCloser, async (req, res, next) => {
+  try {
+    await flushDriveWriteQueue();
+    const rows = await readTodayMetroRows({ includeClosed: true });
+    const summary = await buildMetroCloseSummary(rows);
+    if (summary.pending > 0 && !req.body?.closeAnyway) {
+      return res.status(409).json({ message: 'There are pending labels. Close anyway?', summary });
+    }
+    const printRows = await readRows(tabs.printLogs);
+    await saveFinalMetroFiles(rows, printRows);
+    const closedAt = nowIso();
+    const saved = await saveMetroCloseSummary({ ...summary, closedAt }, { closedBy: req.user.username });
+    await audit({
+      actor: req.user.username,
+      action: 'metro_batch_closed',
+      entity: 'MetroLabeling',
+      entityId: summary.date,
+      ip: req.ip,
+      device: req.get('user-agent') || '',
+      metadata: { ...summary, closedAt, closeSummaryFileId: saved.driveFile.id }
+    });
+    markMetroBatchClosed({ closedBy: req.user.username });
+    res.json({
+      message: 'Metro batch closed. Upload a new file to begin.',
+      batchStatus: 'Closed',
+      rows: [],
+      summary: { ...summary, closedBy: req.user.username, closedAt },
+      closeSummaryFile: saved.driveFile,
+      closeSummaryFileName: saved.fileName,
+      ...getDriveWriteQueueStatus()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+labelsRouter.get('/batch/close-summary/download', authRequired, requireAccess('metro-labeling'), requireBatchCloser, (_req, res) => {
+  const closeSummary = getLastCloseSummary();
+  if (!closeSummary?.buffer) return res.status(404).json({ message: 'No close summary is available for download.' });
+  res.setHeader('Content-Type', mimeFor('xlsx'));
+  res.setHeader('Content-Disposition', `attachment; filename="${closeSummary.fileName}"`);
+  res.send(closeSummary.buffer);
 });
 
 labelsRouter.patch('/:id', authRequired, requireAccess('metro-labeling'), async (req, res, next) => {

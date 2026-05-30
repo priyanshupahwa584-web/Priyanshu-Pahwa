@@ -1200,6 +1200,10 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [agentMessage, setAgentMessage] = useState('Checking BROPS Print Agent...');
   const [selectedPrinter, setSelectedPrinter] = useState(getDefaultPrinter());
   const [batchStatus, setBatchStatus] = useState('Open');
+  const [closeSummary, setCloseSummary] = useState<any>(null);
+  const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [closingBatch, setClosingBatch] = useState(false);
+  const [closeSummaryReady, setCloseSummaryReady] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const scanQueueRef = useRef<string[]>([]);
@@ -1215,6 +1219,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [confirmBeforeReprint, setConfirmBeforeReprint] = useState(true);
   const printerName = selectedPrinter || getDefaultPrinter();
   const canUpload = ['Admin', 'Manager', 'Supervisor'].includes(user.role);
+  const canCloseBatch = canUpload;
   const visibleRows = useMemo(() => {
     const search = queueFilter.trim().toLowerCase();
     const selectedStatus = status.trim().toLowerCase();
@@ -1342,6 +1347,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       showNotice('success', `${response.importedRows} Metro label rows imported.`);
       setSelected([]);
       setFile(null);
+      setCloseSummaryReady(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
       const importedRows = (response.rows || []).map(normalizeMetroRow);
       if (importedRows.length) {
@@ -1413,6 +1419,68 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       return offline ? 'offline' : 'error';
     } finally {
       setBusy(false);
+    }
+  };
+
+  const clearScreenOnly = () => {
+    setRows([]);
+    setSelected([]);
+    setPreview(null);
+    setLastScanned(null);
+    setLastPrinted(null);
+    setBatchStatus('Cleared');
+    showNotice('info', 'Screen cleared. Stored Drive files were not changed.');
+  };
+
+  const reloadTodayBatch = async () => {
+    if (batchStatus === 'Closed') {
+      showNotice('info', 'Metro batch is closed. Upload a new file to begin.');
+      return;
+    }
+    await load(true);
+    showNotice('success', 'Today’s Metro batch reloaded.');
+  };
+
+  const openCloseBatch = async () => {
+    if (!canCloseBatch) return;
+    try {
+      const response = await api<any>('/metro-labeling/batch/summary');
+      setCloseSummary(response.summary);
+      setCloseModalOpen(true);
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const confirmCloseBatch = async () => {
+    setClosingBatch(true);
+    try {
+      const response = await postJson<any>('/metro-labeling/batch/close', { closeAnyway: true });
+      setRows([]);
+      setSelected([]);
+      setPreview(null);
+      setBatchStatus('Closed');
+      setCloseSummary(response.summary);
+      setCloseSummaryReady(true);
+      setCloseModalOpen(false);
+      updateSyncState(response);
+      showNotice('success', response.message || 'Metro batch closed. Upload a new file to begin.');
+    } catch (error: any) {
+      if (error.status === 409) {
+        showNotice('info', 'There are pending labels. Close anyway?');
+      } else {
+        showNotice('error', error.message);
+      }
+    } finally {
+      setClosingBatch(false);
+    }
+  };
+
+  const downloadCloseSummary = async () => {
+    try {
+      await downloadFromApi('/metro-labeling/batch/close-summary/download', `metro_close_summary_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error: any) {
+      showNotice('error', error.message);
     }
   };
 
@@ -1573,6 +1641,22 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
         </div>
       )}
       <div className="card p-4 sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="font-black text-slate-950">Metro Batch</h3>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              {batchStatus === 'Closed' ? 'Metro batch closed. Upload a new file to begin.' : 'Current day batch is active in browser memory and archived to Drive Excel.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button className="button" onClick={clearScreenOnly}>Clear screen only</button>
+            <button className="button" onClick={() => reloadTodayBatch().catch((error) => showNotice('error', error.message))}>Reload today’s batch</button>
+            {canCloseBatch && <button className="button button-primary" disabled={closingBatch || batchStatus === 'Closed'} onClick={openCloseBatch}>Close Metro Batch</button>}
+            {closeSummaryReady && <button className="button" onClick={downloadCloseSummary}>Download close summary</button>}
+          </div>
+        </div>
+      </div>
+      <div className="card p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
           <div className="min-w-0 flex-1">
             <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -1715,6 +1799,38 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
         columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'userId', 'errorMessage']}
         emptyText="No print history yet."
       />
+      {closeModalOpen && closeSummary && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-950">Close Metro Batch</h3>
+                <p className="mt-1 text-sm font-semibold text-slate-500">Review the day summary before closing.</p>
+              </div>
+              <button className="button button-subtle" onClick={() => setCloseModalOpen(false)}>Cancel</button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <MiniStatus label="Total labels" value={number(closeSummary.totalLabels)} />
+              <MiniStatus label="Printed" value={number(closeSummary.printed)} />
+              <MiniStatus label="Pending" value={number(closeSummary.pending)} />
+              <MiniStatus label="Errors" value={number(closeSummary.errors)} />
+              <MiniStatus label="Reprints" value={number(closeSummary.reprints)} />
+              <MiniStatus label="Uploaded file" value={closeSummary.uploadedFileName || 'Unknown'} />
+            </div>
+            {Number(closeSummary.pending || 0) > 0 && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-black text-amber-800">
+                There are pending labels. Close anyway?
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap justify-end gap-3">
+              <button className="button" onClick={() => setCloseModalOpen(false)}>Keep Batch Open</button>
+              <button className="button button-primary" disabled={closingBatch} onClick={confirmCloseBatch}>
+                {closingBatch ? 'Closing...' : Number(closeSummary.pending || 0) > 0 ? 'Close Anyway' : 'Close Metro Batch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageStack>
   );
 }
