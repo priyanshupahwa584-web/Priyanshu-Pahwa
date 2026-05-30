@@ -150,12 +150,42 @@ export function isAllowedOrigin(origin) {
 }
 
 export function googleConfigured() {
-  return Boolean(!config.google.configError && config.google.clientEmail && config.google.privateKey && config.google.sheetId);
+  return facilitySourceConfigured();
 }
 
-export function googleConfigError() {
+export function googleCredentialsConfigured() {
+  return Boolean(!config.google.configError && config.google.clientEmail && config.google.privateKey);
+}
+
+export function facilitySourceConfigured() {
+  return Boolean(googleCredentialsConfigured() && config.google.sheetId);
+}
+
+export function driveStorageConfigured() {
+  return Boolean(googleCredentialsConfigured() && config.google.driveFolderId);
+}
+
+export function googleCredentialsError() {
   if (config.google.configError) return config.google.configError;
   if (!config.google.clientEmail || !config.google.privateKey) return 'Google service account credentials are not configured on the server.';
+  return '';
+}
+
+export function facilitySourceConfigError() {
+  const credentialsError = googleCredentialsError();
+  if (credentialsError) return credentialsError;
   if (!config.google.sheetId) return 'GOOGLE_SHEET_ID is not configured on the server.';
   return '';
+}
+
+export function driveStorageConfigError() {
+  const credentialsError = googleCredentialsError();
+  if (credentialsError) return credentialsError;
+  if (!config.google.driveFolderId) return 'GOOGLE_DRIVE_FOLDER_ID is not configured. Share the root BROPS Storage folder with the service account and set GOOGLE_DRIVE_FOLDER_ID.';
+  return '';
+}
+
+export function googleConfigError(target = 'facility') {
+  if (target === 'drive') return driveStorageConfigError();
+  return facilitySourceConfigError();
 }

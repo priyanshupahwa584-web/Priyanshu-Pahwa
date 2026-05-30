@@ -48,10 +48,10 @@ export function errorHandler(error, _req, res, _next) {
   if (String(error.message || '').includes('CORS')) return res.status(403).json({ message: 'Request origin is not allowed.' });
   const upstreamStatus = Number(error?.code || error?.response?.status || 0);
   if (upstreamStatus === 401 || upstreamStatus === 403) {
-    return res.status(503).json({ message: 'Platform storage permission is blocked. Admin can check system access.' });
+    return res.status(503).json({ message: 'Google storage is not accessible. Share the Facility Sort sheet as viewer and the BROPS Storage folder as editor with the service account.' });
   }
   if (upstreamStatus === 404) {
-    return res.status(503).json({ message: 'Platform storage is not initialized. Admin can initialize system tabs.' });
+    return res.status(503).json({ message: 'Google storage source was not found. Check the Facility Sort sheet and initialize Drive storage from Settings.' });
   }
   console.error(error);
   return res.status(500).json({ message: 'Server unavailable, please try again later.' });

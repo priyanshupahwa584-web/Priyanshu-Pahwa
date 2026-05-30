@@ -1,16 +1,16 @@
 import { google } from 'googleapis';
-import { config, googleConfigError, googleConfigured } from '../config.js';
+import { config, facilitySourceConfigError, facilitySourceConfigured, googleCredentialsConfigured, googleCredentialsError } from '../config.js';
 
 const scopes = [
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive.file'
+  'https://www.googleapis.com/auth/spreadsheets.readonly',
+  'https://www.googleapis.com/auth/drive'
 ];
 
 let cachedAuth;
 
 export function getGoogleAuth() {
-  if (!googleConfigured()) {
-    const error = new Error(googleConfigError() || 'Google Sheets/Drive credentials are not configured on the server.');
+  if (!googleCredentialsConfigured()) {
+    const error = new Error(googleCredentialsError() || 'Google service account credentials are not configured on the server.');
     error.statusCode = 503;
     throw error;
   }
@@ -26,6 +26,11 @@ export function getGoogleAuth() {
 }
 
 export function getSheetsClient() {
+  if (!facilitySourceConfigured()) {
+    const error = new Error(facilitySourceConfigError());
+    error.statusCode = 503;
+    throw error;
+  }
   return google.sheets({ version: 'v4', auth: getGoogleAuth() });
 }
 

@@ -1,10 +1,7 @@
 import express from 'express';
 import { authRequired, requireAccess } from '../middleware/auth.js';
-import { audit } from '../services/auditService.js';
-import { appendRows, deleteRowById, readRows, updateRowById } from '../services/googleSheets.js';
+import { readRows } from '../services/driveExcelStore.js';
 import { tabs } from '../services/sheetSchema.js';
-import { id, nowIso } from '../utils/ids.js';
-import { dataRowSchema } from '../utils/validation.js';
 
 export const dataRouter = express.Router();
 
@@ -34,12 +31,7 @@ dataRouter.get('/', authRequired, requireAccess('data'), async (req, res, next) 
 
 dataRouter.post('/', authRequired, requireAccess('data'), async (req, res, next) => {
   try {
-    const body = dataRowSchema.parse(req.body);
-    const createdAt = nowIso();
-    const record = { id: id('op'), ...body, createdAt, updatedAt: createdAt, createdBy: req.user.username };
-    await appendRows(tabs.operations, [record]);
-    await audit({ actor: req.user.username, action: 'data_created', entity: 'OperationsData', entityId: record.id, ip: req.ip, device: req.get('user-agent') || '' });
-    res.status(201).json({ row: record });
+    res.status(405).json({ message: 'Facility Operations is read-only from the Sort sheet. Platform data is stored in Google Drive Excel files.' });
   } catch (error) {
     next(error);
   }
@@ -47,11 +39,7 @@ dataRouter.post('/', authRequired, requireAccess('data'), async (req, res, next)
 
 dataRouter.put('/:id', authRequired, requireAccess('data'), async (req, res, next) => {
   try {
-    const body = dataRowSchema.partial().parse(req.body);
-    const row = await updateRowById(tabs.operations, req.params.id, { ...body, updatedAt: nowIso() });
-    if (!row) return res.status(404).json({ message: 'Data row not found.' });
-    await audit({ actor: req.user.username, action: 'data_updated', entity: 'OperationsData', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '' });
-    res.json({ row });
+    res.status(405).json({ message: 'Facility Operations is read-only from the Sort sheet. Platform data is stored in Google Drive Excel files.' });
   } catch (error) {
     next(error);
   }
@@ -59,10 +47,7 @@ dataRouter.put('/:id', authRequired, requireAccess('data'), async (req, res, nex
 
 dataRouter.delete('/:id', authRequired, requireAccess('data'), async (req, res, next) => {
   try {
-    const deleted = await deleteRowById(tabs.operations, req.params.id);
-    if (!deleted) return res.status(404).json({ message: 'Data row not found.' });
-    await audit({ actor: req.user.username, action: 'data_deleted', entity: 'OperationsData', entityId: req.params.id, ip: req.ip, device: req.get('user-agent') || '' });
-    res.json({ ok: true });
+    res.status(405).json({ message: 'Facility Operations is read-only from the Sort sheet. Platform data is stored in Google Drive Excel files.' });
   } catch (error) {
     next(error);
   }

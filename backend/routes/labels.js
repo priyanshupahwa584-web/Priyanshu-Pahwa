@@ -6,8 +6,8 @@ import { config } from '../config.js';
 import { authRequired, requireAccess } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
 import { buildExport, mimeFor } from '../services/exportService.js';
-import { uploadBufferToDrive, uploadFileToDriveFolder } from '../services/googleDrive.js';
-import { appendRows, readRows, updateRowById } from '../services/googleSheets.js';
+import { uploadBufferToDrive } from '../services/googleDrive.js';
+import { appendRows, readRows, updateRowById, uploadMetroOriginal } from '../services/driveExcelStore.js';
 import { parseMetroLabelFile } from '../services/labelImportService.js';
 import { tabs } from '../services/sheetSchema.js';
 import { buildPdfLabel, buildZplLabel, normalizeLabelPayload } from '../utils/label.js';
@@ -187,18 +187,7 @@ labelsRouter.post('/scan', authRequired, requireAccess('metro-labeling'), async 
 labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requireLabelUploader, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Choose a CSV, XLSX, XLSM, or JSON label file first.' });
-    let driveFile = { id: '', name: req.file.originalname };
-    let archiveWarning = '';
-    if (config.google.driveFolderId) {
-      driveFile = await uploadFileToDriveFolder({
-        filePath: req.file.path,
-        fileName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        folderName: 'Labels'
-      });
-    } else {
-      archiveWarning = 'Drive archive folder not configured. File imported but original upload was not archived.';
-    }
+    const driveFile = await uploadMetroOriginal(req.file);
     const parsed = await parseMetroLabelFile(req.file.path, req.file.originalname, driveFile.id, req.user.username);
     if (!parsed.rows.length && parsed.errors.length) {
       await appendRows(tabs.uploads, [{
@@ -208,8 +197,8 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
         driveFileId: driveFile.id,
         size: req.file.size,
         uploadedBy: req.user.username,
-        status: archiveWarning ? 'Failed - Not Archived' : 'Failed',
-        message: archiveWarning || JSON.stringify(parsed.errors.slice(0, 20)),
+        status: 'Failed',
+        message: JSON.stringify(parsed.errors.slice(0, 20)),
         createdAt: nowIso()
       }]);
       const missingTracking = parsed.errors.some((error) => String(error.message || '').includes('Tracking Number'));
@@ -219,7 +208,7 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
         importedRows: 0,
         skippedRows: parsed.skippedCount,
         rejectedRows: parsed.rejectedCount,
-        warning: archiveWarning
+        warning: ''
       });
     }
     await appendRows(tabs.metroLabeling, parsed.rows);
@@ -227,13 +216,13 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
       id: id('upload'),
       fileName: req.file.originalname,
       mimeType: req.file.mimetype,
-        driveFileId: driveFile.id,
-        size: req.file.size,
-        uploadedBy: req.user.username,
-        status: archiveWarning ? 'Imported - Not Archived' : parsed.errors.length ? 'Imported With Skips' : 'Imported',
-        message: archiveWarning || `${parsed.rows.length} Metro label rows imported${parsed.errors.length ? `, ${parsed.errors.length} rejected` : ''}`,
-        createdAt: nowIso()
-      }]);
+      driveFileId: driveFile.id,
+      size: req.file.size,
+      uploadedBy: req.user.username,
+      status: parsed.errors.length ? 'Imported With Skips' : 'Imported',
+      message: `${parsed.rows.length} Metro label rows imported${parsed.errors.length ? `, ${parsed.errors.length} rejected` : ''}`,
+      createdAt: nowIso()
+    }]);
     await audit({
       actor: req.user.username,
       action: 'metro_labels_uploaded',
@@ -251,7 +240,7 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
       uploadedBy: req.user.username,
       uploadedAt: nowIso(),
       driveFileId: driveFile.id,
-      warning: archiveWarning,
+      warning: '',
       rows: parsed.rows.slice(0, 50)
     });
   } catch (error) {

@@ -3,7 +3,7 @@ import { authRequired, requireAccess } from '../middleware/auth.js';
 import { audit } from '../services/auditService.js';
 import { buildExport, mimeFor } from '../services/exportService.js';
 import { uploadBufferToDrive } from '../services/googleDrive.js';
-import { appendRows, readRows } from '../services/googleSheets.js';
+import { appendRows, readRows } from '../services/driveExcelStore.js';
 import { tabs } from '../services/sheetSchema.js';
 import { id, nowIso } from '../utils/ids.js';
 import { exportSchema } from '../utils/validation.js';

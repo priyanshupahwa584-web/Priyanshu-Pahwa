@@ -2254,7 +2254,7 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
   }, []);
   const initialize = async () => {
     try {
-      const response = await postJson<{ message: string }>('/health/initialize-google-tabs', {});
+      const response = await postJson<{ message: string }>('/health/initialize-drive-storage', {});
       showNotice('success', response.message);
     } catch (error: any) {
       showNotice('error', error.message);
@@ -2269,9 +2269,9 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
           <MiniStatus label="Session" value="Protected" />
           <MiniStatus label="Access" value={user.role} />
         </div>
-        {health && !health.driveFolderConfigured && (
+        {health && (!health.driveStorageConfigured || !health.driveStorageWritable) && (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
-            Drive archive folder not configured. Metro imports still work, but original upload files will not be archived until Admin sets GOOGLE_DRIVE_FOLDER_ID.
+            Drive Excel storage is not ready. Set GOOGLE_DRIVE_FOLDER_ID to the BROPS Storage folder and share it with the service account as an editor.
           </div>
         )}
       </Panel>
@@ -2285,7 +2285,7 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
               <div className="text-sm font-black uppercase tracking-[0.14em] text-amber-700">System Setup</div>
               <p className="mt-2 text-sm font-semibold text-amber-800">Admin use only.</p>
               <p className="mt-2 text-sm text-amber-800">Use this only when Users, sessions, activity, print logs, or Metro storage need to be initialized or repaired.</p>
-              <button className="button button-primary mt-4" onClick={initialize}>Initialize System Tabs</button>
+              <button className="button button-primary mt-4" onClick={initialize}>Initialize Drive Storage</button>
             </div>
           )}
         </Panel>

@@ -15,7 +15,7 @@ import {
   securityProfile,
   startTwoFactorSetup
 } from '../services/authService.js';
-import { appendRows } from '../services/googleSheets.js';
+import { appendRows } from '../services/driveExcelStore.js';
 import { tabs } from '../services/sheetSchema.js';
 import { id, nowIso } from '../utils/ids.js';
 import { changePasswordSchema, loginSchema, twoFactorCodeSchema } from '../utils/validation.js';

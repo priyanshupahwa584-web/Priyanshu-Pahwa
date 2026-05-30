@@ -2,6 +2,7 @@ export const tabs = {
   operations: 'OperationsData',
   users: 'Users',
   audit: 'AuditLogs',
+  userActivity: 'UserActivity',
   uploads: 'UploadLogs',
   exports: 'ExportLogs',
   metroLabeling: 'MetroLabeling',
@@ -50,6 +51,7 @@ export const sheetHeaders = {
     'email'
   ],
   [tabs.audit]: ['id', 'actor', 'action', 'entity', 'entityId', 'ip', 'device', 'metadata', 'createdAt'],
+  [tabs.userActivity]: ['id', 'actor', 'action', 'entity', 'entityId', 'ip', 'device', 'metadata', 'createdAt'],
   [tabs.uploads]: ['id', 'fileName', 'mimeType', 'driveFileId', 'size', 'uploadedBy', 'status', 'message', 'createdAt'],
   [tabs.exports]: ['id', 'type', 'format', 'filters', 'rowCount', 'requestedBy', 'driveFileId', 'fileName', 'createdAt']
   ,

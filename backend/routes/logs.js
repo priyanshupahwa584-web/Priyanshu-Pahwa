@@ -1,6 +1,6 @@
 import express from 'express';
 import { authRequired, requireAccess } from '../middleware/auth.js';
-import { readRows } from '../services/googleSheets.js';
+import { readRows } from '../services/driveExcelStore.js';
 import { tabs } from '../services/sheetSchema.js';
 
 export const logsRouter = express.Router();

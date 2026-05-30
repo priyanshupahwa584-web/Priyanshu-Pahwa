@@ -7,7 +7,8 @@ Secure production web application for Broadreach operations data, Metro labeling
 - Frontend: React + Vite + TypeScript + Tailwind + Recharts
 - Backend: Node.js + Express
 - Auth: username/password, bcrypt hashes only, JWT session cookie, TOTP 2FA, recovery codes, and tracked sessions
-- Data source: Google Sheets API
+- Facility source: Google Sheets API, read-only Sort sheet
+- Platform storage: Google Drive Excel files under `BROPS Storage`
 - File storage: Google Drive API
 - Local label printing: Broadreach Windows Print Agent on each printing workstation
 - Exports: CSV, XLSX, and PDF generated from real table/JSON data
@@ -15,19 +16,21 @@ Secure production web application for Broadreach operations data, Metro labeling
 
 Google credentials are used only by the backend. The frontend never receives service account JSON, private keys, or Google API credentials.
 
-## Required Google Sheet Tabs
+## Required Google Storage
 
-The app can initialize these tabs from Settings after credentials are configured:
+`GOOGLE_SHEET_ID` points only to the Facility Operations Sort workbook. The backend reads `Sort 2026- Jan 01- Dec 31st` and does not write platform data to Google Sheets.
 
-- `OperationsData`
-- `Users`
-- `AuditLogs`
-- `UploadLogs`
-- `ExportLogs`
-- `MetroLabeling`
-- `FulfilmentReports`
-- `PrintLogs`
-- `UserSessions`
+`GOOGLE_DRIVE_FOLDER_ID` points to the root `BROPS Storage` Drive folder shared with the service account as an editor. Settings can initialize these Drive Excel files:
+
+- `Metro/YYYY-MM-DD/metro_labels_YYYY-MM-DD.xlsx`
+- `Metro/YYYY-MM-DD/metro_print_history_YYYY-MM-DD.xlsx`
+- `Metro/YYYY-MM-DD/metro_uploads_YYYY-MM-DD.xlsx`
+- `Users/users.xlsx`
+- `Users/user_sessions.xlsx`
+- `Users/user_activity.xlsx`
+- `Audit/audit_logs_YYYY-MM-DD.xlsx`
+- `Reports/export_logs.xlsx`
+- `Reports/fulfilment_reports.xlsx`
 
 ### MetroLabeling
 
@@ -61,8 +64,8 @@ GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"...","priva
 GOOGLE_PROJECT_ID=your-project-id
 GOOGLE_CLIENT_EMAIL=service-account@project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-GOOGLE_SHEET_ID=your-google-sheet-id
-GOOGLE_DRIVE_FOLDER_ID=your-drive-folder-id
+GOOGLE_SHEET_ID=your-facility-sort-google-sheet-id
+GOOGLE_DRIVE_FOLDER_ID=your-brops-storage-drive-folder-id
 CORS_ORIGIN=https://your-vercel-frontend.vercel.app
 VITE_API_URL=https://priyanshu-pahwa.onrender.com
 ```
@@ -165,7 +168,7 @@ VITE_API_URL=<your-local-backend-url>
 
 ## Import and Export
 
-Imports support `.csv`, `.xlsx`, `.xlsm`, and `.json`. Rows are validated before being saved to `OperationsData`. Uploaded files are stored in the configured Google Drive folder and logged in `UploadLogs`.
+Facility Operations imports are disabled because the Sort sheet is read-only. Metro Labeling imports support `.csv`, `.xlsx`, `.xlsm`, and `.json`; imported rows are stored in `Metro/YYYY-MM-DD/metro_labels_YYYY-MM-DD.xlsx` and logged in `Metro/YYYY-MM-DD/metro_uploads_YYYY-MM-DD.xlsx`.
 
 Exports generate real data files from filtered table data:
 
@@ -177,9 +180,7 @@ Each export includes filters, row count, user, and timestamp metadata. Exported 
 
 ## Metro Labeling
 
-Metro Labeling accepts `.csv`, `.xlsx`, `.xlsm`, and `.json` files. The import reads real Metro table fields such as Tracking Number, Driver, Routing Sequence, Delivery Address, City, and Postal Code, normalizes them into the `MetroLabeling` tab, and uploads the original file to a `Labels` folder in Google Drive.
-
-If `GOOGLE_DRIVE_FOLDER_ID` is not configured, Metro rows can still import into the `MetroLabeling` tab. The response includes this warning: `Drive archive folder not configured. File imported but original upload was not archived.`
+Metro Labeling accepts `.csv`, `.xlsx`, `.xlsm`, and `.json` files. The import reads real Metro table fields such as Tracking Number, Driver, Routing Sequence, Delivery Address, City, and Postal Code, normalizes them into `Metro/YYYY-MM-DD/metro_labels_YYYY-MM-DD.xlsx`, and uploads the original file to the same dated Metro folder.
 
 Supported actions:
 
@@ -187,7 +188,7 @@ Supported actions:
 - Scan a tracking number, select the matching label, and print automatically when Scan Mode is enabled.
 - Preview a real 4x2 label layout.
 - Print one label, reprint a label, or bulk print selected labels.
-- Write every print/reprint/error to `PrintLogs` and `AuditLogs`.
+- Write every print/reprint/error to `Metro/YYYY-MM-DD/metro_print_history_YYYY-MM-DD.xlsx` and `Audit/audit_logs_YYYY-MM-DD.xlsx`.
 
 ## Windows Print Agent
 
@@ -247,11 +248,11 @@ Render settings:
 - Build Command: `npm install`
 - Start Command: `npm start`
 - Environment: Node
-- Required production env: `NODE_ENV=production`, `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `GOOGLE_SERVICE_ACCOUNT_JSON` or split Google service account values, `GOOGLE_SHEET_ID`, `GOOGLE_DRIVE_FOLDER_ID`
+- Required production env: `NODE_ENV=production`, `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `GOOGLE_SERVICE_ACCOUNT_JSON` or split Google service account values, `GOOGLE_SHEET_ID` for the Facility Sort workbook, `GOOGLE_DRIVE_FOLDER_ID` for the BROPS Storage folder
 - CORS: set `CORS_ORIGIN` to your exact Vercel frontend URL. If omitted in production, the backend allows `https://*.vercel.app` as a safe Vercel fallback.
 
 ```bash
 CORS_ORIGIN=https://your-vercel-frontend.vercel.app
 ```
 
-Share the Google Sheet and Drive folder with the service account email.
+Share the Facility Sort Google Sheet as viewer and the BROPS Storage Drive folder as editor with the service account email.

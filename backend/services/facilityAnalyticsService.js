@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config, facilitySourceConfigError, facilitySourceConfigured } from '../config.js';
 import { getSheetsClient } from './googleClient.js';
 
 export const masterOperationsSheet = 'Sort 2026- Jan 01- Dec 31st';
@@ -141,6 +141,36 @@ export async function readMasterFacilityRows() {
     });
   });
   return { records, facilities: facilityHeaders.filter(Boolean), sourceSheet: masterOperationsSheet };
+}
+
+export async function checkFacilitySourceReadable() {
+  const result = {
+    facilitySourceConfigured: facilitySourceConfigured(),
+    facilitySourceReadable: false,
+    facilitySourceSheet: masterOperationsSheet,
+    facilitySourceError: ''
+  };
+  if (!result.facilitySourceConfigured) {
+    result.facilitySourceError = facilitySourceConfigError();
+    return result;
+  }
+  try {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.get({
+      spreadsheetId: config.google.sheetId,
+      range: `${quoteSheetName(masterOperationsSheet)}!A${sourceStartRow}:AH${sourceStartRow}`,
+      valueRenderOption: 'FORMATTED_VALUE',
+      dateTimeRenderOption: 'FORMATTED_STRING'
+    });
+    result.facilitySourceReadable = true;
+    return result;
+  } catch (error) {
+    const status = Number(error?.code || error?.response?.status || 0);
+    result.facilitySourceError = status === 401 || status === 403 || status === 404
+      ? 'Facility Sort sheet is not accessible. Share the Google Sheet with the service account as a viewer.'
+      : (error.message || 'Facility Sort sheet read check failed.');
+    return result;
+  }
 }
 
 export async function buildFacilityAnalytics(options = {}) {

@@ -38,7 +38,9 @@ try {
   assert(result.body.adminAuth?.configured === true, 'health endpoint should report admin auth configured');
   assert(result.body.adminAuth?.passwordHashConfigured === true, 'health endpoint should report admin hash configured');
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
-  assert(result.body.driveFolderConfigured === false, 'health endpoint should report missing Drive archive folder in local verify');
+  assert(result.body.facilitySourceReadable === false, 'health endpoint should report Facility Sort source unreadable without Google config');
+  assert(result.body.driveStorageConfigured === false, 'health endpoint should report missing Drive Excel storage in local verify');
+  assert(result.body.driveStorageWritable === false, 'health endpoint should report Drive Excel storage unwritable without Google config');
 
   result = await request(baseUrl, '/auth/me');
   assert(result.response.status === 401, 'unauthenticated auth/me should return 401');
