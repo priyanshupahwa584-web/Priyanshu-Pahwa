@@ -32,6 +32,7 @@ const pageSubtitles: Partial<Record<SectionKey, string>> = {
   dashboard: 'Live facility volume, trends, and performance movement.',
   data: 'Live facility volume, trends, and performance movement.',
   'metro-labeling': 'Metro Labeling',
+  'metro-complete-file': 'Complete Metro File',
   fulfilment: 'Fulfilment Reports',
   imports: 'File Imports',
   exports: 'File Exports',
@@ -46,6 +47,7 @@ const sectionLabels: Partial<Record<SectionKey, string>> = {
   dashboard: 'Dashboard',
   data: 'Facility Operations',
   'metro-labeling': 'Metro Labeling',
+  'metro-complete-file': 'Complete Metro File',
   fulfilment: 'Fulfilment Reports',
   imports: 'File Imports',
   exports: 'File Exports',
@@ -62,9 +64,9 @@ function canAccess(user: User, section: SectionKey) {
 }
 
 function defaultPermissionsForRole(role: string): SectionKey[] {
-  if (role === 'Admin') return ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'settings', 'security'];
-  if (role === 'Manager') return ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'security'];
-  if (role === 'Supervisor') return ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'activity', 'printer-setup', 'security'];
+  if (role === 'Admin') return ['dashboard', 'data', 'metro-labeling', 'metro-complete-file', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'settings', 'security'];
+  if (role === 'Manager') return ['dashboard', 'data', 'metro-labeling', 'metro-complete-file', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'security'];
+  if (role === 'Supervisor') return ['dashboard', 'data', 'metro-labeling', 'metro-complete-file', 'fulfilment', 'imports', 'activity', 'printer-setup', 'security'];
   if (role === 'Viewer') return ['dashboard', 'data', 'activity', 'security'];
   return ['dashboard', 'metro-labeling', 'printer-setup', 'security'];
 }
@@ -1204,6 +1206,12 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [closingBatch, setClosingBatch] = useState(false);
   const [closeSummaryReady, setCloseSummaryReady] = useState(false);
+  const [completeSummary, setCompleteSummary] = useState<any>(null);
+  const [completeModalOpen, setCompleteModalOpen] = useState(false);
+  const [completingFile, setCompletingFile] = useState(false);
+  const [completedFiles, setCompletedFiles] = useState<any[]>([]);
+  const [completedFilesOpen, setCompletedFilesOpen] = useState(false);
+  const [selectedCompletedFileId, setSelectedCompletedFileId] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const scanQueueRef = useRef<string[]>([]);
@@ -1220,6 +1228,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const printerName = selectedPrinter || getDefaultPrinter();
   const canUpload = ['Admin', 'Manager', 'Supervisor'].includes(user.role);
   const canCloseBatch = canUpload;
+  const canCompleteFile = canUpload || user.permissions.includes('metro-complete-file');
   const visibleRows = useMemo(() => {
     const search = queueFilter.trim().toLowerCase();
     const selectedStatus = status.trim().toLowerCase();
@@ -1348,6 +1357,8 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       setSelected([]);
       setFile(null);
       setCloseSummaryReady(false);
+      setCompletedFilesOpen(false);
+      setSelectedCompletedFileId('');
       if (fileInputRef.current) fileInputRef.current.value = '';
       const importedRows = (response.rows || []).map(normalizeMetroRow);
       if (importedRows.length) {
@@ -1433,12 +1444,83 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   };
 
   const reloadTodayBatch = async () => {
-    if (batchStatus === 'Closed') {
-      showNotice('info', 'Metro batch is closed. Upload a new file to begin.');
+    if (['Closed', 'Completed'].includes(batchStatus)) {
+      showNotice('info', batchStatus === 'Completed' ? 'Metro file is completed. Use Reload Completed File if needed.' : 'Metro batch is closed. Upload a new file to begin.');
       return;
     }
     await load(true);
-    showNotice('success', 'Today’s Metro batch reloaded.');
+    showNotice('success', 'Today\'s Metro batch reloaded.');
+  };
+
+  const openCompleteFile = async () => {
+    if (!canCompleteFile || !rows.length) return;
+    try {
+      const response = await api<any>('/metro-labeling/complete/summary');
+      setCompleteSummary(response.summary);
+      setCompleteModalOpen(true);
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const confirmCompleteFile = async () => {
+    setCompletingFile(true);
+    try {
+      const response = await postJson<any>('/metro-labeling/complete', { completeAnyway: true });
+      setRows([]);
+      setSelected([]);
+      setPreview(null);
+      setLastScanned(null);
+      setLastPrinted(null);
+      setUploadSummary(null);
+      setBatchStatus('Completed');
+      setCloseSummaryReady(false);
+      setCompleteSummary(response.summary);
+      setCompleteModalOpen(false);
+      setCompletedFilesOpen(false);
+      setSelectedCompletedFileId('');
+      updateSyncState(response);
+      showNotice('success', 'Metro file completed and saved to Drive.');
+    } catch (error: any) {
+      if (error.status === 409) {
+        showNotice('info', 'Some labels are still pending. Complete anyway?');
+      } else {
+        showNotice('error', error.message);
+      }
+    } finally {
+      setCompletingFile(false);
+    }
+  };
+
+  const loadCompletedFiles = async () => {
+    try {
+      const response = await api<{ files: any[] }>('/metro-labeling/completed-files');
+      setCompletedFiles(response.files || []);
+      setCompletedFilesOpen(true);
+      setSelectedCompletedFileId(response.files?.[0]?.id || '');
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const reloadCompletedFile = async () => {
+    if (!selectedCompletedFileId) return showNotice('error', 'Choose a completed file to reload.');
+    try {
+      const response = await postJson<any>(`/metro-labeling/completed-files/${selectedCompletedFileId}/reload`, {});
+      const normalizedRows = (response.rows || []).map(normalizeMetroRow);
+      setRows(normalizedRows);
+      setSelected([]);
+      setPreview(normalizedRows[0] || null);
+      setLastScanned(null);
+      setLastPrinted(null);
+      setUploadSummary(null);
+      setCloseSummaryReady(false);
+      setBatchStatus(response.batchStatus || 'Reloaded Completed');
+      updateSyncState(response);
+      showNotice('success', 'Completed Metro file reloaded.');
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
   };
 
   const openCloseBatch = async () => {
@@ -1645,16 +1727,35 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
           <div>
             <h3 className="font-black text-slate-950">Metro Batch</h3>
             <p className="mt-1 text-sm font-semibold text-slate-500">
-              {batchStatus === 'Closed' ? 'Metro batch closed. Upload a new file to begin.' : 'Current day batch is active in browser memory and archived to Drive Excel.'}
+              {batchStatus === 'Completed'
+                ? 'Metro file completed and saved to Drive.'
+                : batchStatus === 'Closed'
+                  ? 'Metro batch closed. Upload a new file to begin.'
+                  : 'Current day batch is active in browser memory and archived to Drive Excel.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {canCompleteFile && rows.length > 0 && <button className="button button-primary" disabled={completingFile} onClick={openCompleteFile}>Complete File</button>}
             <button className="button" onClick={clearScreenOnly}>Clear screen only</button>
-            <button className="button" onClick={() => reloadTodayBatch().catch((error) => showNotice('error', error.message))}>Reload today’s batch</button>
-            {canCloseBatch && <button className="button button-primary" disabled={closingBatch || batchStatus === 'Closed'} onClick={openCloseBatch}>Close Metro Batch</button>}
+            <button className="button" onClick={() => reloadTodayBatch().catch((error) => showNotice('error', error.message))}>Reload today's batch</button>
+            {canCompleteFile && <button className="button" onClick={loadCompletedFiles}>Reload Completed File</button>}
+            {canCloseBatch && <button className="button" disabled={closingBatch || ['Closed', 'Completed'].includes(batchStatus)} onClick={openCloseBatch}>Close Metro Batch</button>}
             {closeSummaryReady && <button className="button" onClick={downloadCloseSummary}>Download close summary</button>}
           </div>
         </div>
+        {completedFilesOpen && canCompleteFile && (
+          <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(0,1fr)_auto]">
+            <label className="label">
+              Completed file
+              <select className="input" value={selectedCompletedFileId} onChange={(event) => setSelectedCompletedFileId(event.target.value)}>
+                <option value="">Select completed file</option>
+                {completedFiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <button className="button button-primary self-end" onClick={reloadCompletedFile}>Reload Completed File</button>
+            {!completedFiles.length && <div className="text-sm font-bold text-slate-500 md:col-span-2">No completed Metro files were found for today.</div>}
+          </div>
+        )}
       </div>
       <div className="card p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
@@ -1780,7 +1881,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
           title="Metro Labels"
           rows={visibleRows}
           columns={['trackingNumber', 'driver', 'routingSequence', 'deliveryAddress', 'city', 'postalCode', 'status', 'uploadedBy', 'printedBy', 'printedAt', 'printerName', 'reprintCount', 'errorMessage']}
-          emptyText={batchStatus === 'Closed' ? 'Metro batch closed. Upload a new file to begin.' : 'Upload a file to begin.'}
+          emptyText={batchStatus === 'Completed' ? 'Metro file completed and saved to Drive.' : batchStatus === 'Closed' ? 'Metro batch closed. Upload a new file to begin.' : 'Upload a file to begin.'}
           select={{ selected, onChange: setSelected }}
           onRowClick={(row) => setPreview(row)}
           actions={(row: MetroLabelRow) => (
@@ -1799,6 +1900,40 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
         columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'userId', 'errorMessage']}
         emptyText="No print history yet."
       />
+      {completeModalOpen && completeSummary && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-950">Complete Metro File</h3>
+                <p className="mt-1 text-sm font-semibold text-slate-500">Save this uploaded file to Drive and clear the active screen.</p>
+              </div>
+              <button className="button button-subtle" onClick={() => setCompleteModalOpen(false)}>Cancel</button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <MiniStatus label="Uploaded file name" value={completeSummary.fileName || 'Unknown'} />
+              <MiniStatus label="Total labels" value={number(completeSummary.totalLabels)} />
+              <MiniStatus label="Printed labels" value={number(completeSummary.printed)} />
+              <MiniStatus label="Pending labels" value={number(completeSummary.pending)} />
+              <MiniStatus label="Error labels" value={number(completeSummary.errors)} />
+              <MiniStatus label="Reprint count" value={number(completeSummary.reprints)} />
+              <MiniStatus label="Completed by" value={completeSummary.completedBy || user.username} />
+              <MiniStatus label="Completed at" value={formatDateTime(completeSummary.completedAt)} />
+            </div>
+            {Number(completeSummary.pending || 0) > 0 && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-black text-amber-800">
+                Some labels are still pending. Complete anyway?
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap justify-end gap-3">
+              <button className="button" onClick={() => setCompleteModalOpen(false)}>Keep File Active</button>
+              <button className="button button-primary" disabled={completingFile} onClick={confirmCompleteFile}>
+                {completingFile ? 'Completing...' : Number(completeSummary.pending || 0) > 0 ? 'Complete Anyway' : 'Complete File'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {closeModalOpen && closeSummary && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
           <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)]">
@@ -2911,6 +3046,13 @@ function formatShortDate(value: string) {
   const date = new Date(value.includes('T') ? value : `${value}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) return value || 'N/A';
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: value.length > 10 ? undefined : 'numeric' }).format(date);
+}
+
+function formatDateTime(value: string) {
+  if (!value) return 'N/A';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
 function friendlyOperationsError(message: string) {

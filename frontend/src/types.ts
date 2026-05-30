@@ -4,6 +4,7 @@ export type SectionKey =
   | 'dashboard'
   | 'data'
   | 'metro-labeling'
+  | 'metro-complete-file'
   | 'fulfilment'
   | 'imports'
   | 'exports'

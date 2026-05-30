@@ -1,11 +1,14 @@
+import ExcelJS from 'exceljs';
 import { appendRows, readRows, replaceRows, updateRowById } from './driveExcelStore.js';
 import { buildXlsx, mimeFor } from './exportService.js';
-import { uploadBufferToDrive } from './googleDrive.js';
+import { ensureDriveFolderPath, uploadBufferToDrive } from './googleDrive.js';
+import { getDriveClient } from './googleClient.js';
 import { tabs } from './sheetSchema.js';
 import { audit } from './auditService.js';
 import { id, nowIso } from '../utils/ids.js';
 
 const metroCacheTtlMs = 5 * 60 * 1000;
+const xlsxMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 let metroCache = {
   date: '',
   rows: [],
@@ -14,7 +17,9 @@ let metroCache = {
   hit: false,
   batchStatus: 'Open',
   closedAt: '',
-  closedBy: ''
+  closedBy: '',
+  completedAt: '',
+  completedBy: ''
 };
 
 let driveQueue = [];
@@ -23,6 +28,7 @@ let activeDriveWrite = null;
 let lastDriveWriteMs = 0;
 let lastDriveWriteError = '';
 let lastCloseSummary = null;
+let lastCompletedFile = null;
 let queueSequence = 0;
 let coldStartDetected = true;
 
@@ -50,7 +56,13 @@ function normalizeRow(row = {}) {
   };
 }
 
-function setCacheRows(rows, { status = metroCache.batchStatus, closedAt = metroCache.closedAt, closedBy = metroCache.closedBy } = {}) {
+function setCacheRows(rows, {
+  status = metroCache.batchStatus,
+  closedAt = metroCache.closedAt,
+  closedBy = metroCache.closedBy,
+  completedAt = metroCache.completedAt,
+  completedBy = metroCache.completedBy
+} = {}) {
   metroCache = {
     date: todayMetroDate(),
     rows: cloneRows(rows).map(normalizeRow),
@@ -59,7 +71,9 @@ function setCacheRows(rows, { status = metroCache.batchStatus, closedAt = metroC
     hit: false,
     batchStatus: status,
     closedAt,
-    closedBy
+    closedBy,
+    completedAt,
+    completedBy
   };
 }
 
@@ -72,7 +86,9 @@ export function invalidateMetroCache() {
     hit: false,
     batchStatus: 'Open',
     closedAt: '',
-    closedBy: ''
+    closedBy: '',
+    completedAt: '',
+    completedBy: ''
   };
 }
 
@@ -82,13 +98,18 @@ export function clearMetroScreenCacheOnly() {
 
 export async function readTodayMetroRows({ force = false, includeClosed = false } = {}) {
   const date = todayMetroDate();
+  if (metroCache.date === date && ['Closed', 'Completed'].includes(metroCache.batchStatus)) {
+    metroCache.hit = metroCache.expiresAt > Date.now();
+    return includeClosed ? cloneRows(metroCache.rows) : [];
+  }
   const cacheFresh = metroCache.date === date && metroCache.expiresAt > Date.now();
   if (!force && cacheFresh) {
     metroCache.hit = true;
-    if (metroCache.batchStatus === 'Closed' && !includeClosed) return [];
     return cloneRows(metroCache.rows);
   }
-  const rows = (await readRows(tabs.metroLabeling)).map(normalizeRow);
+  const rows = metroCache.batchStatus === 'Completed' && !force
+    ? []
+    : (await readRows(tabs.metroLabeling)).map(normalizeRow);
   setCacheRows(rows, { status: 'Open', closedAt: '', closedBy: '' });
   if (coldStartDetected) coldStartDetected = false;
   return cloneRows(rows);
@@ -97,13 +118,15 @@ export async function readTodayMetroRows({ force = false, includeClosed = false 
 export function getMetroCacheSnapshot() {
   return {
     date: metroCache.date || todayMetroDate(),
-    rows: metroCache.batchStatus === 'Closed' ? [] : cloneRows(metroCache.rows),
+    rows: ['Closed', 'Completed'].includes(metroCache.batchStatus) ? [] : cloneRows(metroCache.rows),
     loadedAt: metroCache.loadedAt,
     expiresAt: metroCache.expiresAt,
     hit: metroCache.hit,
     batchStatus: metroCache.batchStatus,
     closedAt: metroCache.closedAt,
-    closedBy: metroCache.closedBy
+    closedBy: metroCache.closedBy,
+    completedAt: metroCache.completedAt,
+    completedBy: metroCache.completedBy
   };
 }
 
@@ -128,7 +151,9 @@ export async function updateTodayMetroLabel(rowId, patch = {}) {
   setCacheRows(nextRows, {
     status: metroCache.batchStatus,
     closedAt: metroCache.closedAt,
-    closedBy: metroCache.closedBy
+    closedBy: metroCache.closedBy,
+    completedAt: metroCache.completedAt,
+    completedBy: metroCache.completedBy
   });
   return { ...updated };
 }
@@ -295,20 +320,41 @@ function latestUploadForRows(rows = [], uploadRows = []) {
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0] || null;
 }
 
-export async function buildMetroCloseSummary(rows = []) {
-  const uploadRows = await readRows(tabs.uploads).catch(() => []);
-  const latestUpload = latestUploadForRows(rows, uploadRows);
+function safeFilePart(value, fallback = 'metro_file') {
+  const cleaned = String(value || fallback)
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-z0-9._-]/gi, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 90);
+  return cleaned || fallback;
+}
+
+function timestampPart(value = nowIso()) {
+  return String(value).replace(/[:.]/g, '-');
+}
+
+function completionStats(rows = []) {
   const printedRows = rows.filter((row) => ['Printed', 'Reprinted'].includes(String(row.status || '')));
   const errorRows = rows.filter((row) => String(row.status || '') === 'Error');
   const pendingRows = rows.filter((row) => !['Printed', 'Reprinted', 'Error'].includes(String(row.status || '')));
   const reprints = rows.reduce((total, row) => total + Number(row.reprintCount || 0), 0);
   return {
-    date: todayMetroDate(),
     totalLabels: rows.length,
     printed: printedRows.length,
     pending: pendingRows.length,
     errors: errorRows.length,
-    reprints,
+    reprints
+  };
+}
+
+export async function buildMetroCloseSummary(rows = []) {
+  const uploadRows = await readRows(tabs.uploads).catch(() => []);
+  const latestUpload = latestUploadForRows(rows, uploadRows);
+  const stats = completionStats(rows);
+  return {
+    date: todayMetroDate(),
+    ...stats,
     uploadedFileName: latestUpload?.fileName || '',
     uploadedFileId: latestUpload?.driveFileId || '',
     generatedAt: nowIso()
@@ -347,4 +393,183 @@ export async function saveMetroCloseSummary(summary, { closedBy = '' } = {}) {
 
 export function getLastCloseSummary() {
   return lastCloseSummary;
+}
+
+export async function buildMetroCompleteSummary(rows = [], { completedBy = '', completedAt = nowIso() } = {}) {
+  const uploadRows = await readRows(tabs.uploads).catch(() => []);
+  const latestUpload = latestUploadForRows(rows, uploadRows);
+  const stats = completionStats(rows);
+  return {
+    date: todayMetroDate(),
+    fileName: latestUpload?.fileName || 'Metro upload',
+    uploadedFileId: latestUpload?.driveFileId || '',
+    ...stats,
+    completedBy,
+    completedAt
+  };
+}
+
+function completedMetroRows(rows = [], summary = {}) {
+  return rows.map((row) => ({
+    'Tracking Number': row.trackingNumber || row.barcodeValue || '',
+    Driver: row.driver || row.customerName || '',
+    'Routing Sequence': row.routingSequence || row.route || '',
+    'Delivery Address': row.deliveryAddress || row.address || '',
+    City: row.city || '',
+    'Postal Code': row.postalCode || '',
+    Status: row.status || '',
+    'Uploaded By': row.uploadedBy || '',
+    'Uploaded At': row.createdAt || '',
+    'Printed By': row.printedBy || '',
+    'Printed At': row.printedAt || '',
+    'Reprint Count': row.reprintCount || 0,
+    'Error Message': row.errorMessage || '',
+    'Completed By': summary.completedBy || '',
+    'Completed At': summary.completedAt || ''
+  }));
+}
+
+function completedSummaryRows(summary = {}) {
+  return [{
+    'File Name': summary.fileName || '',
+    'Total Labels': summary.totalLabels || 0,
+    Printed: summary.printed || 0,
+    Pending: summary.pending || 0,
+    Errors: summary.errors || 0,
+    Reprints: summary.reprints || 0,
+    'Completed By': summary.completedBy || '',
+    'Completed At': summary.completedAt || ''
+  }];
+}
+
+export async function saveMetroCompletedFile(rows = [], summary = {}) {
+  const stamp = timestampPart(summary.completedAt);
+  const completedFileName = `completed_metro_${safeFilePart(summary.fileName)}_${stamp}.xlsx`;
+  const summaryFileName = `completed_metro_summary_${stamp}.xlsx`;
+  const folderPath = ['Metro', summary.date || todayMetroDate(), 'Completed'];
+  const completedBuffer = await buildXlsx(completedMetroRows(rows, summary), {
+    report: 'Completed Metro File',
+    fileName: summary.fileName || '',
+    completedBy: summary.completedBy || '',
+    completedAt: summary.completedAt || '',
+    rowCount: rows.length
+  });
+  const summaryBuffer = await buildXlsx(completedSummaryRows(summary), {
+    report: 'Completed Metro File Summary',
+    completedBy: summary.completedBy || '',
+    completedAt: summary.completedAt || ''
+  });
+  const completedFile = await uploadBufferToDrive({
+    buffer: completedBuffer,
+    fileName: completedFileName,
+    mimeType: mimeFor('xlsx'),
+    folderPath
+  });
+  const summaryFile = await uploadBufferToDrive({
+    buffer: summaryBuffer,
+    fileName: summaryFileName,
+    mimeType: mimeFor('xlsx'),
+    folderPath
+  });
+  lastCompletedFile = {
+    summary,
+    completedFile,
+    summaryFile,
+    completedFileName,
+    summaryFileName
+  };
+  return lastCompletedFile;
+}
+
+export function markMetroFileCompleted({ completedBy, completedAt = nowIso() }) {
+  metroCache = {
+    ...metroCache,
+    rows: [],
+    expiresAt: Date.now() + metroCacheTtlMs,
+    batchStatus: 'Completed',
+    completedAt,
+    completedBy
+  };
+  return getMetroCacheSnapshot();
+}
+
+export async function listCompletedMetroFiles(date = todayMetroDate()) {
+  const folder = await ensureDriveFolderPath(['Metro', date, 'Completed']);
+  const drive = getDriveClient();
+  const response = await drive.files.list({
+    q: `'${String(folder.id).replace(/'/g, "\\'")}' in parents and mimeType = '${xlsxMime}' and name contains 'completed_metro_' and trashed = false`,
+    fields: 'files(id,name,mimeType,size,createdTime,modifiedTime,webViewLink)',
+    spaces: 'drive',
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+    pageSize: 100
+  });
+  return (response.data.files || [])
+    .filter((file) => !String(file.name || '').startsWith('completed_metro_summary_'))
+    .sort((a, b) => String(b.createdTime || b.modifiedTime || '').localeCompare(String(a.createdTime || a.modifiedTime || '')));
+}
+
+function cellText(cell) {
+  if (!cell || cell.value === null || typeof cell.value === 'undefined') return '';
+  if (cell.value instanceof Date) return cell.value.toISOString();
+  if (typeof cell.value === 'object') return cell.text || JSON.stringify(cell.value);
+  return String(cell.value);
+}
+
+export async function reloadCompletedMetroFile(fileId) {
+  const drive = getDriveClient();
+  const response = await drive.files.get(
+    { fileId, alt: 'media', supportsAllDrives: true },
+    { responseType: 'arraybuffer' }
+  );
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(response.data));
+  const sheet = workbook.getWorksheet('Data') || workbook.worksheets[0];
+  if (!sheet) return [];
+  const headerRow = sheet.getRow(1);
+  const headers = [];
+  headerRow.eachCell((cell, colNumber) => {
+    headers[colNumber] = cellText(cell).trim();
+  });
+  const rows = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const values = {};
+    headers.forEach((header, colNumber) => {
+      if (header) values[header] = cellText(row.getCell(colNumber));
+    });
+    if (!values['Tracking Number']) return;
+    rows.push(normalizeRow({
+      id: id('metro_reloaded'),
+      trackingNumber: values['Tracking Number'] || '',
+      barcodeValue: values['Tracking Number'] || '',
+      customerName: values.Driver || '',
+      service: '',
+      route: values['Routing Sequence'] || '',
+      status: values.Status || '',
+      uploadedFileId: fileId,
+      printedAt: values['Printed At'] || '',
+      printedBy: values['Printed By'] || '',
+      reprintCount: values['Reprint Count'] || 0,
+      errorMessage: values['Error Message'] || '',
+      createdAt: values['Uploaded At'] || '',
+      updatedAt: values['Completed At'] || '',
+      address: values['Delivery Address'] || '',
+      city: values.City || '',
+      postalCode: values['Postal Code'] || '',
+      uploadedBy: values['Uploaded By'] || '',
+      driver: values.Driver || '',
+      routingSequence: values['Routing Sequence'] || '',
+      deliveryAddress: values['Delivery Address'] || '',
+      fullAddress: [values['Delivery Address'], values.City, values['Postal Code']].filter(Boolean).join(', '),
+      originalRow: '',
+      printerName: ''
+    }));
+  });
+  setCacheRows(rows, {
+    status: 'Reloaded Completed',
+    completedAt: rows[0]?.updatedAt || nowIso(),
+    completedBy: ''
+  });
+  return cloneRows(rows);
 }

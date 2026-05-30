@@ -125,6 +125,7 @@ export const sections = [
   'dashboard',
   'data',
   'metro-labeling',
+  'metro-complete-file',
   'fulfilment',
   'imports',
   'exports',
@@ -137,8 +138,8 @@ export const sections = [
 
 export const defaultPermissionsByRole = {
   Admin: sections,
-  Manager: ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'security'],
-  Supervisor: ['dashboard', 'data', 'metro-labeling', 'fulfilment', 'imports', 'activity', 'printer-setup', 'security'],
+  Manager: ['dashboard', 'data', 'metro-labeling', 'metro-complete-file', 'fulfilment', 'imports', 'exports', 'users', 'activity', 'printer-setup', 'security'],
+  Supervisor: ['dashboard', 'data', 'metro-labeling', 'metro-complete-file', 'fulfilment', 'imports', 'activity', 'printer-setup', 'security'],
   Operator: ['dashboard', 'metro-labeling', 'printer-setup', 'security'],
   Viewer: ['dashboard', 'data', 'activity', 'security']
 };
