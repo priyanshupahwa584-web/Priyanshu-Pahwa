@@ -1,5 +1,11 @@
 import { Readable } from 'node:stream';
-import { config, driveStorageConfigured, googleCredentialsConfigured, googleCredentialsError } from '../config.js';
+import {
+  config,
+  driveAuthMode,
+  driveCredentialsConfigured,
+  driveCredentialsError,
+  driveStorageConfigured
+} from '../config.js';
 import { getDriveClient } from './googleClient.js';
 
 const folderMime = 'application/vnd.google-apps.folder';
@@ -14,7 +20,7 @@ function clone(value) {
 function googleErrorDetails(error = {}) {
   const responseError = error?.response?.data?.error || {};
   const firstDetail = responseError.errors?.[0] || error?.errors?.[0] || {};
-  const message = String(responseError.message || error.message || '').slice(0, 300);
+  const message = String(responseError.message || error.message || '').replace(/\s+/g, ' ').trim().slice(0, 300);
   const reason = String(firstDetail.reason || responseError.status || error.code || '').slice(0, 120);
   const status = Number(error?.code || error?.response?.status || responseError.code || 0);
   return { message, reason, status };
@@ -22,14 +28,30 @@ function googleErrorDetails(error = {}) {
 
 function driveMessage(code, detail = {}) {
   const email = config.google.clientEmail || 'the configured service account';
+  const actor = driveAuthMode() === 'oauth' ? 'OAuth Drive user' : 'service account';
   if (code === 'folder_id_missing') return 'GOOGLE_DRIVE_FOLDER_ID is not set.';
-  if (code === 'google_credentials_missing') return googleCredentialsError() || 'Google service account credentials are not configured.';
+  if (code === 'google_credentials_missing') return driveCredentialsError() || 'Google Drive storage credentials are not configured.';
+  if (code === 'drive_oauth_missing') return driveCredentialsError() || 'Google Drive OAuth credentials are not configured.';
+  if (code === 'drive_oauth_rejected') return 'Google Drive OAuth credentials were rejected. Regenerate GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN for the configured OAuth client.';
   if (code === 'service_account_mismatch') return `Google Drive rejected the configured service account (${email}). Verify GOOGLE_SERVICE_ACCOUNT_JSON is the same service account shared on the Drive folder.`;
   if (code === 'drive_api_disabled') return 'Google Drive API is disabled for the configured Google Cloud project.';
-  if (code === 'folder_not_accessible') return `Drive folder is not accessible to ${email}. Confirm GOOGLE_DRIVE_FOLDER_ID and share the folder with this service account.`;
-  if (code === 'permission_denied') return `Drive permission denied for ${email}. Share the BROPS Storage folder with this service account as Editor.`;
+  if (code === 'folder_not_accessible') return 'GOOGLE_DRIVE_FOLDER_ID does not point to the shared BROPS Storage folder.';
+  if (code === 'not_a_folder') return 'GOOGLE_DRIVE_FOLDER_ID does not point to the shared BROPS Storage folder.';
+  if (code === 'wrong_folder') return 'GOOGLE_DRIVE_FOLDER_ID does not point to the shared BROPS Storage folder.';
+  if (code === 'cannot_add_children') return `Folder is accessible but this ${actor} cannot add files.`;
+  if (code === 'service_account_storage_quota') return 'Google service account has no Drive storage quota. Use OAuth user Drive storage or Shared Drive.';
+  if (code === 'drive_storage_quota') return 'Google Drive storage quota exceeded. Free Drive storage or use a different OAuth user Drive storage.';
+  if (code === 'permission_denied') {
+    if (driveAuthMode() === 'oauth') return 'Drive permission denied for the configured OAuth user. Share the BROPS Storage folder with that user as Editor.';
+    return `Drive permission denied for ${email}. Share the BROPS Storage folder with this service account as Editor.`;
+  }
   if (code === 'drive_request_failed') return detail.message || 'Google Drive storage check failed.';
   return 'Google Drive storage check failed.';
+}
+
+function looksLikeStorageQuotaExceeded(details) {
+  const combined = `${details.reason} ${details.message}`.toLowerCase();
+  return /storagequotaexceeded|storage quota|quota exceeded|service account.*quota|cannot.*own|ownership|my drive/.test(combined);
 }
 
 export function classifyDriveError(error, context = {}) {
@@ -40,8 +62,8 @@ export function classifyDriveError(error, context = {}) {
       driveErrorStatus: 0
     };
   }
-  if (!googleCredentialsConfigured()) {
-    const code = config.google.configError ? 'service_account_mismatch' : 'google_credentials_missing';
+  if (!driveCredentialsConfigured()) {
+    const code = config.google.driveOAuthPresent ? 'drive_oauth_missing' : (config.google.configError ? 'service_account_mismatch' : 'google_credentials_missing');
     return {
       driveErrorCode: code,
       driveErrorMessage: driveMessage(code),
@@ -53,12 +75,16 @@ export function classifyDriveError(error, context = {}) {
   const combined = `${details.reason} ${details.message}`.toLowerCase();
   let code = context.defaultCode || 'drive_request_failed';
 
-  if (details.status === 404 || /file not found|not found/i.test(details.message)) {
+  if (context.defaultCode) {
+    code = context.defaultCode;
+  } else if (details.status === 404 || /file not found|not found/i.test(details.message)) {
     code = 'folder_not_accessible';
   } else if (details.status === 401 || /invalid_grant|unauthorized_client|invalid client/i.test(combined)) {
-    code = 'service_account_mismatch';
+    code = driveAuthMode() === 'oauth' ? 'drive_oauth_rejected' : 'service_account_mismatch';
   } else if (/accessnotconfigured|service_disabled|api.*disabled|has not been used|disabled/i.test(combined)) {
     code = 'drive_api_disabled';
+  } else if (looksLikeStorageQuotaExceeded(details)) {
+    code = driveAuthMode() === 'oauth' ? 'drive_storage_quota' : 'service_account_storage_quota';
   } else if (details.status === 403 || /forbidden|permission|insufficient/i.test(combined)) {
     code = 'permission_denied';
   }
@@ -67,7 +93,10 @@ export function classifyDriveError(error, context = {}) {
     driveErrorCode: code,
     driveErrorMessage: driveMessage(code, details),
     driveErrorStatus: details.status,
-    driveErrorReason: details.reason
+    driveErrorReason: details.reason,
+    googleErrorCode: details.status,
+    googleErrorReason: details.reason,
+    googleErrorMessage: details.message
   };
 }
 
@@ -84,9 +113,11 @@ export function createDriveStorageError(error, context = {}) {
 function baseDiagnostic() {
   return {
     driveStorageConfigured: driveStorageConfigured(),
+    driveAuthMode: driveAuthMode(),
     driveStorageWritable: false,
     driveFolderIdPresent: Boolean(config.google.driveFolderId),
     driveFolderAccessible: false,
+    configuredFolderId: '',
     serviceAccountEmail: config.google.clientEmail || '',
     serviceAccountSource: config.google.credentialsSource || '',
     serviceAccountJsonPresent: Boolean(config.google.serviceAccountJsonPresent),
@@ -94,6 +125,19 @@ function baseDiagnostic() {
     driveErrorMessage: '',
     driveErrorStatus: 0,
     driveErrorReason: '',
+    googleErrorCode: 0,
+    googleErrorReason: '',
+    googleErrorMessage: '',
+    folderExists: false,
+    folderName: '',
+    folderMimeType: '',
+    folderCapabilities: {
+      canAddChildren: false,
+      canEdit: false
+    },
+    folderSharedWithServiceAccount: false,
+    folderPermissionsVisible: false,
+    folderOwners: [],
     rootFolderName: '',
     rootFolderMimeType: '',
     rootFolderCanAddChildren: false,
@@ -101,6 +145,8 @@ function baseDiagnostic() {
     writeProbeAttempted: false,
     writeProbeFolderCreated: false,
     writeProbeFileCreated: false,
+    writeProbeSuccess: false,
+    writeProbeFileId: '',
     writeProbeCleanedUp: false
   };
 }
@@ -112,6 +158,9 @@ function applyError(result, error, context) {
   result.driveErrorMessage = classified.driveErrorMessage;
   result.driveErrorStatus = classified.driveErrorStatus || 0;
   result.driveErrorReason = classified.driveErrorReason || '';
+  result.googleErrorCode = classified.googleErrorCode || result.driveErrorStatus || 0;
+  result.googleErrorReason = classified.googleErrorReason || result.driveErrorReason || '';
+  result.googleErrorMessage = classified.googleErrorMessage || result.driveErrorMessage || '';
   return result;
 }
 
@@ -127,42 +176,47 @@ async function cleanupProbe(drive, fileId) {
 
 async function runWriteProbe(drive, result) {
   result.writeProbeAttempted = true;
-  let folderId = '';
   let fileId = '';
   try {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const folder = await drive.files.create({
-      requestBody: {
-        name: `.brops-drive-check-${stamp}`,
-        mimeType: folderMime,
-        parents: [config.google.driveFolderId]
-      },
-      fields: 'id,name',
-      supportsAllDrives: true
-    });
-    folderId = folder.data.id || '';
-    result.writeProbeFolderCreated = Boolean(folderId);
-
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const file = await drive.files.create({
       requestBody: {
-        name: 'drive-check.txt',
-        parents: [folderId]
+        name: `brops_drive_write_test_${timestamp}.txt`,
+        parents: [config.google.driveFolderId],
+        mimeType: textMime
       },
       media: {
         mimeType: textMime,
         body: Readable.from(['BROPS Drive storage write check'])
       },
-      fields: 'id,name,size',
+      fields: 'id,name,parents',
       supportsAllDrives: true
     });
     fileId = file.data.id || '';
-    result.writeProbeFileCreated = Boolean(fileId);
-    result.driveStorageWritable = result.writeProbeFolderCreated && result.writeProbeFileCreated;
+    result.writeProbeFileId = fileId;
+    result.writeProbeSuccess = Boolean(fileId);
+    result.writeProbeFileCreated = result.writeProbeSuccess;
+    result.driveStorageWritable = result.writeProbeSuccess;
+  } catch (error) {
+    applyError(result, error);
   } finally {
     const fileCleaned = await cleanupProbe(drive, fileId);
-    const folderCleaned = await cleanupProbe(drive, folderId);
-    result.writeProbeCleanedUp = fileCleaned && folderCleaned;
+    result.writeProbeCleanedUp = fileCleaned;
   }
+}
+
+function permissionMatchesServiceAccount(permission = {}) {
+  const serviceAccountEmail = String(config.google.clientEmail || '').toLowerCase();
+  if (!serviceAccountEmail) return false;
+  return String(permission.emailAddress || '').toLowerCase() === serviceAccountEmail;
+}
+
+function folderOwnerSummary(owners = []) {
+  return owners.map((owner) => ({
+    displayName: owner.displayName || '',
+    emailAddress: owner.emailAddress || '',
+    me: Boolean(owner.me)
+  }));
 }
 
 export async function runDriveStorageDiagnostics({ writeProbe = false, force = false, includeFolderId = false } = {}) {
@@ -173,25 +227,45 @@ export async function runDriveStorageDiagnostics({ writeProbe = false, force = f
   }
 
   const result = baseDiagnostic();
-  if (includeFolderId) result.configuredFolderId = config.google.driveFolderId || '';
+  result.configuredFolderId = includeFolderId ? config.google.driveFolderId || '' : '';
   if (!result.driveFolderIdPresent) return applyError(result, null, { defaultCode: 'folder_id_missing' });
-  if (!googleCredentialsConfigured()) return applyError(result, null, { defaultCode: 'google_credentials_missing' });
+  if (!driveCredentialsConfigured()) {
+    return applyError(result, null, {
+      defaultCode: config.google.driveOAuthPresent ? 'drive_oauth_missing' : 'google_credentials_missing'
+    });
+  }
 
   try {
     const drive = getDriveClient();
     const root = await drive.files.get({
       fileId: config.google.driveFolderId,
-      fields: 'id,name,mimeType,capabilities(canAddChildren,canEdit)',
+      fields: 'id,name,mimeType,capabilities,owners(displayName,emailAddress,me),permissions(id,type,role,emailAddress,displayName,deleted)',
       supportsAllDrives: true
     });
     result.driveFolderAccessible = true;
-    result.rootFolderName = root.data.name || '';
-    result.rootFolderMimeType = root.data.mimeType || '';
-    result.rootFolderCanAddChildren = Boolean(root.data.capabilities?.canAddChildren);
-    result.rootFolderCanEdit = Boolean(root.data.capabilities?.canEdit);
+    result.folderExists = true;
+    result.folderName = root.data.name || '';
+    result.folderMimeType = root.data.mimeType || '';
+    result.folderCapabilities = {
+      canAddChildren: Boolean(root.data.capabilities?.canAddChildren),
+      canEdit: Boolean(root.data.capabilities?.canEdit)
+    };
+    result.folderPermissionsVisible = Array.isArray(root.data.permissions);
+    result.folderSharedWithServiceAccount = result.folderPermissionsVisible
+      ? root.data.permissions.some(permissionMatchesServiceAccount)
+      : false;
+    result.folderOwners = folderOwnerSummary(root.data.owners || []);
+    result.rootFolderName = result.folderName;
+    result.rootFolderMimeType = result.folderMimeType;
+    result.rootFolderCanAddChildren = result.folderCapabilities.canAddChildren;
+    result.rootFolderCanEdit = result.folderCapabilities.canEdit;
 
-    if (!result.rootFolderCanAddChildren && !result.rootFolderCanEdit) {
-      return applyError(result, null, { defaultCode: 'permission_denied' });
+    if (result.folderMimeType !== folderMime || result.folderName !== 'BROPS Storage') {
+      return applyError(result, null, { defaultCode: result.folderMimeType === folderMime ? 'wrong_folder' : 'not_a_folder' });
+    }
+
+    if (!result.folderCapabilities.canAddChildren) {
+      return applyError(result, null, { defaultCode: 'cannot_add_children' });
     }
 
     if (writeProbe) {

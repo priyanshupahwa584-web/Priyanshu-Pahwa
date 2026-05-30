@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { adminAuthConfigWarning, config, driveStorageConfigured, isAllowedOrigin } from './config.js';
+import { adminAuthConfigWarning, config, driveAuthMode, driveStorageConfigured, isAllowedOrigin } from './config.js';
 import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { dataRouter } from './routes/data.js';
@@ -84,6 +84,7 @@ export function startServer(port = config.port) {
   return app.listen(port, () => {
     console.log(`Broadreach Operations Platform running on http://127.0.0.1:${port}`);
     console.log(`Drive storage configured: ${driveStorageConfigured()}`);
+    console.log(`Drive auth mode: ${driveAuthMode()}`);
     console.log(`Drive folder ID present: ${Boolean(config.google.driveFolderId)}`);
     const authWarning = adminAuthConfigWarning();
     if (authWarning) console.warn(`Auth configuration warning: ${authWarning}`);

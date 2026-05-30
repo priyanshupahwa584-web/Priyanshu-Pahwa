@@ -2,6 +2,19 @@ process.env.JWT_SECRET = 'local-verify-secret-change-in-production';
 process.env.ADMIN_USERNAME = 'Priyanshu';
 process.env.ADMIN_PASSWORD_HASH = '$2b$12$VTUqGFUrsEhngu40BrKL/OCBC7Y0DyirENW464/9FCZPMej6pxrFe';
 process.env.NODE_ENV = 'test';
+[
+  'GOOGLE_SERVICE_ACCOUNT_JSON',
+  'GOOGLE_PROJECT_ID',
+  'GOOGLE_CLIENT_EMAIL',
+  'GOOGLE_PRIVATE_KEY',
+  'GOOGLE_SHEET_ID',
+  'GOOGLE_DRIVE_FOLDER_ID',
+  'GOOGLE_DRIVE_OAUTH_CLIENT_ID',
+  'GOOGLE_DRIVE_OAUTH_CLIENT_SECRET',
+  'GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN'
+].forEach((key) => {
+  delete process.env[key];
+});
 
 const { app } = await import('../server.js');
 
@@ -39,6 +52,7 @@ try {
   assert(result.body.adminAuth?.passwordHashConfigured === true, 'health endpoint should report admin hash configured');
   assert(result.body.googleConfigured === false, 'health endpoint should report missing Google config in local verify');
   assert(result.body.driveFolderIdPresent === false, 'health endpoint should report missing Drive folder ID in local verify');
+  assert(result.body.driveAuthMode === 'service_account', 'health endpoint should default Drive auth mode to service_account');
   assert(result.body.driveFolderAccessible === false, 'health endpoint should report Drive folder inaccessible without folder ID');
   assert(result.body.serviceAccountEmail === '', 'health endpoint should not invent a service account email');
   assert(result.body.driveErrorCode === 'folder_id_missing', 'health endpoint should report exact missing Drive folder ID code');

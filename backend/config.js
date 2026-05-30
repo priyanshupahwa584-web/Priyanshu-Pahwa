@@ -65,6 +65,18 @@ function googleCredentials() {
   };
 }
 
+function driveOAuthCredentials() {
+  const clientId = required('GOOGLE_DRIVE_OAUTH_CLIENT_ID');
+  const clientSecret = required('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET');
+  const refreshToken = required('GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN');
+  const present = Boolean(clientId || clientSecret || refreshToken);
+  const missing = [];
+  if (present && !clientId) missing.push('GOOGLE_DRIVE_OAUTH_CLIENT_ID');
+  if (present && !clientSecret) missing.push('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET');
+  if (present && !refreshToken) missing.push('GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN');
+  return { clientId, clientSecret, refreshToken, present, missing };
+}
+
 function packageVersion() {
   try {
     return JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8')).version || '1.0.0';
@@ -86,6 +98,7 @@ function configuredCorsOrigins() {
 
 const generatedSecret = crypto.randomBytes(48).toString('hex');
 const resolvedGoogleCredentials = googleCredentials();
+const resolvedDriveOAuthCredentials = driveOAuthCredentials();
 
 function isBcryptHash(value) {
   return /^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$/.test(String(value || ''));
@@ -113,7 +126,12 @@ export const config = {
     credentialsSource: resolvedGoogleCredentials.credentialsSource,
     serviceAccountJsonPresent: resolvedGoogleCredentials.serviceAccountJsonPresent,
     sheetId: required('GOOGLE_SHEET_ID'),
-    driveFolderId: required('GOOGLE_DRIVE_FOLDER_ID')
+    driveFolderId: required('GOOGLE_DRIVE_FOLDER_ID'),
+    driveOAuthClientId: resolvedDriveOAuthCredentials.clientId,
+    driveOAuthClientSecret: resolvedDriveOAuthCredentials.clientSecret,
+    driveOAuthRefreshToken: resolvedDriveOAuthCredentials.refreshToken,
+    driveOAuthPresent: resolvedDriveOAuthCredentials.present,
+    driveOAuthMissing: resolvedDriveOAuthCredentials.missing
   },
   corsOrigins: configuredCorsOrigins(),
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB || 25) * 1024 * 1024,
@@ -165,12 +183,25 @@ export function googleCredentialsConfigured() {
   return Boolean(!config.google.configError && config.google.clientEmail && config.google.privateKey);
 }
 
+export function driveOAuthConfigured() {
+  return Boolean(config.google.driveOAuthClientId && config.google.driveOAuthClientSecret && config.google.driveOAuthRefreshToken);
+}
+
+export function driveAuthMode() {
+  return config.google.driveOAuthPresent ? 'oauth' : 'service_account';
+}
+
+export function driveCredentialsConfigured() {
+  if (config.google.driveOAuthPresent) return driveOAuthConfigured();
+  return googleCredentialsConfigured();
+}
+
 export function facilitySourceConfigured() {
   return Boolean(googleCredentialsConfigured() && config.google.sheetId);
 }
 
 export function driveStorageConfigured() {
-  return Boolean(googleCredentialsConfigured() && config.google.driveFolderId);
+  return Boolean(driveCredentialsConfigured() && config.google.driveFolderId);
 }
 
 export function googleCredentialsError() {
@@ -186,10 +217,18 @@ export function facilitySourceConfigError() {
   return '';
 }
 
+export function driveCredentialsError() {
+  if (config.google.driveOAuthPresent) {
+    if (driveOAuthConfigured()) return '';
+    return `Google Drive OAuth credentials are incomplete. Set ${config.google.driveOAuthMissing.join(', ')}.`;
+  }
+  return googleCredentialsError();
+}
+
 export function driveStorageConfigError() {
-  const credentialsError = googleCredentialsError();
+  const credentialsError = driveCredentialsError();
   if (credentialsError) return credentialsError;
-  if (!config.google.driveFolderId) return 'GOOGLE_DRIVE_FOLDER_ID is not configured. Share the root BROPS Storage folder with the service account and set GOOGLE_DRIVE_FOLDER_ID.';
+  if (!config.google.driveFolderId) return 'GOOGLE_DRIVE_FOLDER_ID is not configured. Set GOOGLE_DRIVE_FOLDER_ID to the root BROPS Storage folder.';
   return '';
 }
 

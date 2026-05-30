@@ -1,12 +1,10 @@
 import fs from 'node:fs';
-import { config } from '../config.js';
+import { config, driveStorageConfigured } from '../config.js';
 import { getDriveClient } from './googleClient.js';
 import { createDriveStorageError } from './driveDiagnostics.js';
 
 export function driveStorageRequiredError() {
-  if (!config.google.driveFolderId) {
-    return createDriveStorageError(null, { defaultCode: 'folder_id_missing' });
-  }
+  if (!driveStorageConfigured()) return createDriveStorageError(null);
   return null;
 }
 
@@ -70,6 +68,7 @@ export async function uploadFileToDrive({ filePath, fileName, mimeType, folderId
   const response = await drive.files.create({
     requestBody: {
       name: fileName,
+      mimeType,
       parents: [targetFolder.id]
     },
     media: {

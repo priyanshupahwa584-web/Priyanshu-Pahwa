@@ -20,7 +20,7 @@ Google credentials are used only by the backend. The frontend never receives ser
 
 `GOOGLE_SHEET_ID` points only to the Facility Operations Sort workbook. The backend reads `Sort 2026- Jan 01- Dec 31st` and does not write platform data to Google Sheets.
 
-`GOOGLE_DRIVE_FOLDER_ID` points to the root `BROPS Storage` Drive folder shared with the service account as an editor. Settings can initialize these Drive Excel files:
+`GOOGLE_DRIVE_FOLDER_ID` points to the root `BROPS Storage` Drive folder. Drive Excel platform storage can use OAuth user Drive storage with `GOOGLE_DRIVE_OAUTH_CLIENT_ID`, `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET`, and `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN`, or a Shared Drive folder reachable by the service account. Settings can initialize these Drive Excel files:
 
 - `Metro/YYYY-MM-DD/metro_labels_YYYY-MM-DD.xlsx`
 - `Metro/YYYY-MM-DD/metro_print_history_YYYY-MM-DD.xlsx`
@@ -65,6 +65,9 @@ GOOGLE_PROJECT_ID=your-project-id
 GOOGLE_CLIENT_EMAIL=service-account@project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 GOOGLE_SHEET_ID=your-facility-sort-google-sheet-id
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=your-drive-oauth-client-id
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=your-drive-oauth-client-secret
+GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN=your-drive-oauth-refresh-token
 GOOGLE_DRIVE_FOLDER_ID=your-brops-storage-drive-folder-id
 CORS_ORIGIN=https://your-vercel-frontend.vercel.app
 VITE_API_URL=https://priyanshu-pahwa.onrender.com
@@ -78,7 +81,9 @@ node -e "import bcrypt from 'bcryptjs'; console.log(await bcrypt.hash('your-pass
 
 No default password is shipped.
 
-Google credentials can be provided either as `GOOGLE_SERVICE_ACCOUNT_JSON` from the full service account file, or as `GOOGLE_CLIENT_EMAIL` plus `GOOGLE_PRIVATE_KEY`. If both are present, `GOOGLE_SERVICE_ACCOUNT_JSON` is used first.
+Google service account credentials can be provided either as `GOOGLE_SERVICE_ACCOUNT_JSON` from the full service account file, or as `GOOGLE_CLIENT_EMAIL` plus `GOOGLE_PRIVATE_KEY`. If both are present, `GOOGLE_SERVICE_ACCOUNT_JSON` is used first. The Facility Sort Google Sheet always uses the service account read-only path.
+
+For Drive Excel platform storage, set all three `GOOGLE_DRIVE_OAUTH_*` values to create, update, and download files as a real Drive user. If those values are omitted, Drive storage falls back to the service account and should use a Shared Drive folder because Google service accounts do not have My Drive storage quota. Platform data remains in Drive Excel files, not Google Sheets.
 
 ## Local Run
 
@@ -249,10 +254,11 @@ Render settings:
 - Start Command: `npm start`
 - Environment: Node
 - Required production env: `NODE_ENV=production`, `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `GOOGLE_SERVICE_ACCOUNT_JSON` or split Google service account values, `GOOGLE_SHEET_ID` for the Facility Sort workbook, `GOOGLE_DRIVE_FOLDER_ID` for the BROPS Storage folder
+- Optional Drive OAuth env for My Drive-backed platform storage: `GOOGLE_DRIVE_OAUTH_CLIENT_ID`, `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET`, `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN`
 - CORS: set `CORS_ORIGIN` to your exact Vercel frontend URL. If omitted in production, the backend allows `https://*.vercel.app` as a safe Vercel fallback.
 
 ```bash
 CORS_ORIGIN=https://your-vercel-frontend.vercel.app
 ```
 
-Share the Facility Sort Google Sheet as viewer and the BROPS Storage Drive folder as editor with the service account email.
+Share the Facility Sort Google Sheet as viewer with the service account email. For Drive Excel storage, either configure the `GOOGLE_DRIVE_OAUTH_*` values and use a folder owned by that OAuth user, or use a Shared Drive folder shared with the service account as editor.

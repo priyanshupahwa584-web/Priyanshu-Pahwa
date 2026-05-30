@@ -2271,7 +2271,7 @@ function SettingsPage({ user, showNotice }: { user: User; showNotice: (type: Not
         </div>
         {health && (!health.driveStorageConfigured || !health.driveStorageWritable) && (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
-            {health.driveErrorMessage || health.driveStorageError || 'Drive Excel storage is not ready. Set GOOGLE_DRIVE_FOLDER_ID to the BROPS Storage folder and share it with the service account as an editor.'}
+            {health.driveErrorMessage || health.driveStorageError || 'Drive Excel storage is not ready. Set GOOGLE_DRIVE_FOLDER_ID and configure OAuth user Drive storage or a Shared Drive folder.'}
           </div>
         )}
       </Panel>
