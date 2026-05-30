@@ -9,6 +9,16 @@ import { buildExport, mimeFor } from '../services/exportService.js';
 import { uploadBufferToDrive } from '../services/googleDrive.js';
 import { appendRows, readRows, updateRowById, uploadMetroOriginal } from '../services/driveExcelStore.js';
 import { parseMetroLabelFile } from '../services/labelImportService.js';
+import {
+  enqueueDriveWrite,
+  findTodayMetroLabel,
+  getDriveWriteQueueStatus,
+  getMetroCacheSnapshot,
+  invalidateMetroCache,
+  readTodayMetroRows,
+  recordMetroPrint,
+  retryFailedDriveWrites
+} from '../services/metroCacheService.js';
 import { tabs } from '../services/sheetSchema.js';
 import { buildPdfLabel, buildZplLabel, normalizeLabelPayload } from '../utils/label.js';
 import { id, nowIso } from '../utils/ids.js';
@@ -79,8 +89,7 @@ function labelPatch(body = {}) {
 }
 
 async function findLabel({ id: rowId, trackingNumber }) {
-  const rows = await readRows(tabs.metroLabeling);
-  return rows.find((row) => (rowId && row.id === rowId) || (trackingNumber && row.trackingNumber === trackingNumber)) || null;
+  return findTodayMetroLabel({ id: rowId, trackingNumber });
 }
 
 function exactTrackingMatch(row, value) {
@@ -90,46 +99,7 @@ function exactTrackingMatch(row, value) {
 }
 
 async function markPrintResult(label, body, req, status, errorMessage = '') {
-  const timestamp = nowIso();
-  const action = body.action === 'reprint' || ['Printed', 'Reprinted'].includes(label.status) ? 'reprint' : 'print';
-  const reprintCount = action === 'reprint' ? Number(label.reprintCount || 0) + 1 : Number(label.reprintCount || 0);
-  const updated = await updateRowById(tabs.metroLabeling, label.id, {
-    status,
-    printedAt: status === 'Error' ? label.printedAt || '' : timestamp,
-    printedBy: status === 'Error' ? label.printedBy || '' : req.user.username,
-    printerName: body.printerName || label.printerName || '',
-    reprintCount,
-    errorMessage,
-    updatedAt: timestamp
-  });
-  await appendRows(tabs.printLogs, [{
-    id: id('print'),
-    trackingNumber: label.trackingNumber,
-    action,
-    userId: req.user.username,
-    status,
-    printerName: body.printerName || '',
-    timestamp,
-    errorMessage
-  }]);
-  await audit({
-    actor: req.user.username,
-    action: status === 'Error' ? 'label_print_failed' : `label_${action}ed`,
-    entity: 'MetroLabeling',
-    entityId: label.id,
-    ip: req.ip,
-    device: req.get('user-agent') || '',
-    metadata: { trackingNumber: label.trackingNumber, printerName: body.printerName || '', status, errorMessage }
-  });
-  return updated;
-}
-
-async function markPendingPrint(label) {
-  return updateRowById(tabs.metroLabeling, label.id, {
-    status: 'Pending Print',
-    errorMessage: '',
-    updatedAt: nowIso()
-  });
+  return recordMetroPrint({ label, body, req, status, errorMessage });
 }
 
 async function buildPrintPayload(label, type) {
@@ -144,8 +114,16 @@ async function buildPrintPayload(label, type) {
 
 labelsRouter.get('/', authRequired, requireAccess('metro-labeling'), async (req, res, next) => {
   try {
-    const rows = filterLabels(await readRows(tabs.metroLabeling), req.query).reverse();
-    res.json({ rows, count: rows.length });
+    const rows = filterLabels(await readTodayMetroRows({ force: req.query.force === '1' }), req.query).reverse();
+    const snapshot = getMetroCacheSnapshot();
+    res.json({
+      rows,
+      count: rows.length,
+      batchStatus: snapshot.batchStatus,
+      closedAt: snapshot.closedAt,
+      closedBy: snapshot.closedBy,
+      ...getDriveWriteQueueStatus()
+    });
   } catch (error) {
     next(error);
   }
@@ -166,9 +144,9 @@ labelsRouter.post('/scan', authRequired, requireAccess('metro-labeling'), async 
   try {
     const trackingNumber = String(req.body?.trackingNumber || '').trim();
     if (!trackingNumber) return res.status(400).json({ message: 'Scan Tracking / Barcode is required.' });
-    const rows = await readRows(tabs.metroLabeling);
+    const rows = await readTodayMetroRows();
     const row = rows.find((item) => exactTrackingMatch(item, trackingNumber));
-    await audit({
+    enqueueDriveWrite('metro_scan_audit', () => audit({
       actor: req.user.username,
       action: row ? 'metro_label_scanned' : 'metro_label_scan_not_found',
       entity: 'MetroLabeling',
@@ -176,9 +154,9 @@ labelsRouter.post('/scan', authRequired, requireAccess('metro-labeling'), async 
       ip: req.ip,
       device: req.get('user-agent') || '',
       metadata: { trackingNumber, status: row?.status || 'Not found' }
-    });
+    }));
     if (!row) return res.status(404).json({ message: 'Tracking not found.' });
-    res.json({ row, scannedBy: req.user.username, scannedAt: nowIso() });
+    res.json({ row, scannedBy: req.user.username, scannedAt: nowIso(), ...getDriveWriteQueueStatus() });
   } catch (error) {
     next(error);
   }
@@ -212,6 +190,7 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
       });
     }
     await appendRows(tabs.metroLabeling, parsed.rows);
+    invalidateMetroCache();
     await appendRows(tabs.uploads, [{
       id: id('upload'),
       fileName: req.file.originalname,
@@ -241,7 +220,7 @@ labelsRouter.post('/upload', authRequired, requireAccess('metro-labeling'), requ
       uploadedAt: nowIso(),
       driveFileId: driveFile.id,
       warning: '',
-      rows: parsed.rows.slice(0, 50)
+      rows: parsed.rows
     });
   } catch (error) {
     next(error);
@@ -288,9 +267,10 @@ labelsRouter.post('/print', authRequired, requireAccess('metro-labeling'), async
     let updated = label;
     if (!body.prepareOnly) {
       const status = body.action === 'reprint' || ['Printed', 'Reprinted'].includes(label.status) ? 'Reprinted' : 'Printed';
-      updated = await markPrintResult(label, body, req, status);
+      const result = await markPrintResult(label, body, req, status);
+      updated = result.row;
     } else {
-      updated = await markPendingPrint(label) || label;
+      updated = label;
     }
     res.json({
       row: updated,
@@ -302,7 +282,8 @@ labelsRouter.post('/print', authRequired, requireAccess('metro-labeling'), async
         ...payload.label,
         zpl: payload.zpl,
         pdfBase64: payload.pdfBase64
-      }
+      },
+      ...getDriveWriteQueueStatus()
     });
   } catch (error) {
     next(error);
@@ -315,7 +296,8 @@ labelsRouter.post('/reprint', authRequired, requireAccess('metro-labeling'), asy
     const label = await findLabel(body);
     if (!label) return res.status(404).json({ message: 'Label row was not found.' });
     const payload = await buildPrintPayload(label, body.type);
-    const updated = body.prepareOnly ? await markPendingPrint(label) || label : await markPrintResult(label, body, req, 'Reprinted');
+    const result = body.prepareOnly ? { row: label } : await markPrintResult(label, body, req, 'Reprinted');
+    const updated = result.row;
     res.json({
       row: updated,
       ...payload,
@@ -326,7 +308,8 @@ labelsRouter.post('/reprint', authRequired, requireAccess('metro-labeling'), asy
         ...payload.label,
         zpl: payload.zpl,
         pdfBase64: payload.pdfBase64
-      }
+      },
+      ...getDriveWriteQueueStatus()
     });
   } catch (error) {
     next(error);
@@ -339,11 +322,19 @@ labelsRouter.post('/print/confirm', authRequired, requireAccess('metro-labeling'
     const label = await findLabel(body);
     if (!label) return res.status(404).json({ message: 'Label row was not found.' });
     const status = body.errorMessage ? 'Error' : (body.action === 'reprint' || ['Printed', 'Reprinted'].includes(label.status) ? 'Reprinted' : 'Printed');
-    const row = await markPrintResult(label, body, req, status, body.errorMessage || '');
-    res.json({ row });
+    const result = await markPrintResult(label, body, req, status, body.errorMessage || '');
+    res.json(result);
   } catch (error) {
     next(error);
   }
+});
+
+labelsRouter.get('/sync/status', authRequired, requireAccess('metro-labeling'), (_req, res) => {
+  res.json(getDriveWriteQueueStatus());
+});
+
+labelsRouter.post('/sync/retry', authRequired, requireAccess('metro-labeling'), (_req, res) => {
+  res.json({ retried: retryFailedDriveWrites(), ...getDriveWriteQueueStatus() });
 });
 
 labelsRouter.patch('/:id', authRequired, requireAccess('metro-labeling'), async (req, res, next) => {

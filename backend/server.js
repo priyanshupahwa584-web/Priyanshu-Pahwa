@@ -23,6 +23,7 @@ import { importsRouter } from './routes/imports.js';
 import { labelsRouter } from './routes/labels.js';
 import { fulfilmentRouter } from './routes/fulfilment.js';
 import { logsRouter } from './routes/logs.js';
+import { performanceRouter } from './routes/performance.js';
 import { systemRouter } from './routes/system.js';
 import { usersRouter } from './routes/users.js';
 import { apiRateLimit, enforceHttpsInProduction, errorHandler, sameOriginProtection } from './middleware/security.js';
@@ -68,6 +69,7 @@ app.use('/api/metro-labeling', labelsRouter);
 app.use('/api/fulfilment', fulfilmentRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/logs', logsRouter);
+app.use('/api/performance', performanceRouter);
 app.use('/api/system', systemRouter);
 
 app.use('/api', (_req, res) => {

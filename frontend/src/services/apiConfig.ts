@@ -37,4 +37,4 @@ export function apiUrl(path: string) {
   return `${API_BASE_URL}${normalizedPath}`;
 }
 
-export const PRINT_AGENT_URL = trimTrailingSlash(import.meta.env.VITE_PRINT_AGENT_URL || 'http://127.0.0.1:5055');
+export const PRINT_AGENT_URL = trimTrailingSlash(import.meta.env.VITE_PRINT_AGENT_URL || 'http://localhost:5055');

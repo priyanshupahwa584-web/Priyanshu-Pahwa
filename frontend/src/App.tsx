@@ -3,7 +3,7 @@ import type { CSSProperties, DragEvent, FormEvent, KeyboardEvent, ReactNode } fr
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, clearAccessToken, downloadExport, downloadFromApi, postJson, putJson, storeAccessToken } from './services/api';
-import { checkAgent, getAgentToken, getDefaultPrinter, getPrinters, saveAgentPrinter, sendPrintJob, setAgentToken } from './services/printAgent';
+import { checkAgent, checkAgentStatus, getAgentToken, getDefaultPrinter, getPrinters, saveAgentPrinter, sendPrintJob, setAgentToken } from './services/printAgent';
 import type { FacilityAnalytics, FulfilmentReport, MetroLabelRow, Notice, NoticeType, OperationRow, SectionKey, User } from './types';
 
 const idleTimeoutMs = 30 * 60 * 1000;
@@ -460,7 +460,9 @@ function DashboardPage({ showNotice }: { showNotice: (type: NoticeType, text: st
       {busy && !data ? <DashboardSkeleton /> : data ? (
         <>
           <FacilityKpis data={data} />
-          <FacilityLineChart title="Output Trend" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} onExpand={() => setFullscreenOpen(true)} />
+          <LazyRender>
+            <FacilityLineChart title="Output Trend" data={lineData} facilities={selectedFacilities} allFacilities={data.facilities} onExpand={() => setFullscreenOpen(true)} />
+          </LazyRender>
           <FullscreenModal open={fullscreenOpen} title="Output Trend" onClose={() => setFullscreenOpen(false)}>
             <div className="grid h-full min-h-0 gap-3">
               <FacilityFilters data={data} duration={duration} setDuration={setDuration} selectedFacilities={selectedFacilities} setSelectedFacilities={setSelectedFacilities} compact />
@@ -567,7 +569,9 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
               pieSeries={focusedPieSeries}
               onExpand={() => setFullscreenView('chart')}
             />
-            <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} onExpand={() => setFullscreenView('heatmap')} />
+            <LazyRender>
+              <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} onExpand={() => setFullscreenView('heatmap')} />
+            </LazyRender>
             <FacilityRanking rows={rankingRows} />
           </div>
           <div className="facility-desktop-layout">
@@ -585,7 +589,9 @@ function FacilityAnalyticsPage({ showNotice }: { showNotice: (type: NoticeType, 
                   onExpand={() => setFullscreenView('chart')}
                 />
               </div>
-              <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} onExpand={() => setFullscreenView('heatmap')} />
+              <LazyRender>
+                <FacilityHeatmap data={data} selected={heatmapSelection} onSelect={selectHeatmapCell} onExpand={() => setFullscreenView('heatmap')} />
+              </LazyRender>
             </div>
             <FacilityRanking rows={rankingRows} />
           </div>
@@ -628,7 +634,7 @@ function FacilityChartView({ chartType, lineData, facilities, allFacilities, bar
   onExpand?: () => void;
 }) {
   return (
-    <>
+    <LazyRender>
       {chartType === 'Line' && (
         <FacilityLineChart
           title="Facility Trend Comparison"
@@ -642,7 +648,7 @@ function FacilityChartView({ chartType, lineData, facilities, allFacilities, bar
       )}
       {chartType === 'Bar' && <FacilityBarChart data={barSeries} fullscreen={fullscreen} onExpand={onExpand} />}
       {chartType === 'Pie' && <FacilityPieChart data={pieSeries} fullscreen={fullscreen} onExpand={onExpand} />}
-    </>
+    </LazyRender>
   );
 }
 
@@ -1163,7 +1169,18 @@ function DashboardSkeleton() {
   );
 }
 
+function LazyRender({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setReady(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return ready ? <>{children}</> : <div className="skeleton-panel" />;
+}
+
 type MetroScanStatus = 'Ready' | 'Printed' | 'Not Found' | 'Already Printed' | 'Printer Offline';
+type MetroSyncStatus = 'Synced' | 'Pending sync' | 'Sync failed';
+type LocalAgentStatus = 'Online' | 'Offline' | 'Not Installed' | 'Checking';
 
 function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type: NoticeType, text: string) => void }) {
   const [rows, setRows] = useState<MetroLabelRow[]>([]);
@@ -1176,10 +1193,18 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [preview, setPreview] = useState<MetroLabelRow | null>(null);
   const [uploadSummary, setUploadSummary] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [loadingRows, setLoadingRows] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<MetroSyncStatus>('Synced');
+  const [syncError, setSyncError] = useState('');
+  const [agentStatus, setAgentStatus] = useState<LocalAgentStatus>('Checking');
+  const [agentMessage, setAgentMessage] = useState('Checking BROPS Print Agent...');
+  const [selectedPrinter, setSelectedPrinter] = useState(getDefaultPrinter());
+  const [batchStatus, setBatchStatus] = useState('Open');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const scanQueueRef = useRef<string[]>([]);
   const scanProcessingRef = useRef(false);
+  const rowsRef = useRef<MetroLabelRow[]>([]);
   const [scanMode, setScanMode] = useState(false);
   const [scanStatus, setScanStatus] = useState<MetroScanStatus>('Ready');
   const [lastScanned, setLastScanned] = useState<{ trackingNumber: string; status: string; at: string } | null>(null);
@@ -1188,9 +1213,17 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [autoClearAfterPrint, setAutoClearAfterPrint] = useState(true);
   const [autoReprint, setAutoReprint] = useState(false);
   const [confirmBeforeReprint, setConfirmBeforeReprint] = useState(true);
-  const printerName = getDefaultPrinter();
+  const printerName = selectedPrinter || getDefaultPrinter();
   const canUpload = ['Admin', 'Manager', 'Supervisor'].includes(user.role);
-  const query = useMemo(() => new URLSearchParams(Object.entries({ search: queueFilter, status }).filter(([, value]) => value)).toString(), [queueFilter, status]);
+  const visibleRows = useMemo(() => {
+    const search = queueFilter.trim().toLowerCase();
+    const selectedStatus = status.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (selectedStatus && String(row.status || '').toLowerCase() !== selectedStatus) return false;
+      if (!search) return true;
+      return `${row.trackingNumber} ${row.barcodeValue} ${row.driver} ${row.routingSequence} ${row.deliveryAddress} ${row.city} ${row.postalCode}`.toLowerCase().includes(search);
+    });
+  }, [rows, queueFilter, status]);
   const metroStats = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     return {
@@ -1209,7 +1242,17 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     fullAddress: row.fullAddress || [row.deliveryAddress || row.address, row.city, row.postalCode].filter(Boolean).join(', ')
   });
 
+  const mergeRows = (incoming: MetroLabelRow[], current: MetroLabelRow[]) => {
+    const byId = new Map(current.map((row) => [row.id, row]));
+    incoming.forEach((row) => byId.set(row.id, normalizeMetroRow(row)));
+    return Array.from(byId.values());
+  };
+
   const trackingKey = (value: unknown) => String(value || '').trim().toLowerCase();
+
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   const focusScanInput = () => {
     if (!scanMode) return;
@@ -1220,18 +1263,53 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     }, 0);
   };
 
-  const load = async () => {
-    const [response, logs] = await Promise.all([
-      api<{ rows: MetroLabelRow[] }>(`/metro-labeling?${query}`),
-      api<{ rows: any[] }>('/metro-labeling/history').catch(() => ({ rows: [] }))
-    ]);
-    const normalizedRows = (response.rows || []).map(normalizeMetroRow);
-    setRows(normalizedRows);
-    setPrintLogs(logs.rows || []);
-    setPreview((current) => current || normalizedRows[0] || null);
+  const updateSyncState = (payload: any) => {
+    if (payload?.syncStatus) setSyncStatus(payload.syncStatus);
+    if (payload?.lastDriveWriteError) setSyncError(payload.lastDriveWriteError);
+    if (payload?.syncStatus !== 'Sync failed') setSyncError('');
   };
 
-  useEffect(() => { load().catch((error) => showNotice('error', error.message)); }, []);
+  const loadSyncStatus = async () => {
+    const statusPayload = await api<any>('/metro-labeling/sync/status');
+    updateSyncState(statusPayload);
+  };
+
+  const detectAgent = async () => {
+    const statusPayload = await checkAgentStatus();
+    setAgentStatus(statusPayload.status);
+    setAgentMessage(statusPayload.message);
+    const defaultPrinter = statusPayload.health?.defaultPrinter || getDefaultPrinter();
+    if (defaultPrinter) setSelectedPrinter(defaultPrinter);
+  };
+
+  const load = async (force = false) => {
+    setLoadingRows(true);
+    try {
+      const [response, logs] = await Promise.all([
+        api<any>(`/metro-labeling${force ? '?force=1' : ''}`),
+        api<{ rows: any[] }>('/metro-labeling/history').catch(() => ({ rows: [] }))
+      ]);
+      const normalizedRows = (response.rows || []).map(normalizeMetroRow);
+      setRows(normalizedRows);
+      setPrintLogs(logs.rows || []);
+      setBatchStatus(response.batchStatus || 'Open');
+      updateSyncState(response);
+      setPreview((current) => current || normalizedRows[0] || null);
+    } finally {
+      setLoadingRows(false);
+    }
+  };
+
+  useEffect(() => {
+    load().catch((error) => showNotice('error', error.message)).finally(() => setLoadingRows(false));
+    detectAgent().catch(() => null);
+  }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      loadSyncStatus().catch(() => null);
+    }, syncStatus === 'Pending sync' ? 5000 : 15000);
+    return () => window.clearInterval(timer);
+  }, [syncStatus]);
   useEffect(() => {
     if (scanMode) focusScanInput();
   }, [scanMode]);
@@ -1265,8 +1343,15 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       setSelected([]);
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      if (response.rows?.[0]) setPreview(response.rows[0]);
-      await load();
+      const importedRows = (response.rows || []).map(normalizeMetroRow);
+      if (importedRows.length) {
+        setRows((current) => mergeRows(importedRows, current));
+        setPreview(importedRows[0]);
+      } else {
+        await load(true);
+      }
+      setBatchStatus('Open');
+      updateSyncState(response);
     } catch (error: any) {
       showNotice('error', error.message);
     } finally {
@@ -1276,28 +1361,70 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
 
   const printRow = async (row: MetroLabelRow, action: 'print' | 'reprint' = 'print') => {
     setPreview(row);
-    if (!printerName) {
-      showNotice('info', 'Print agent not connected. Preview is ready.');
+    const currentPrinter = printerName || getDefaultPrinter();
+    if (!currentPrinter || agentStatus !== 'Online') {
+      showNotice('info', 'Install and run BROPS Print Agent on this PC.');
       return 'offline';
     }
     setBusy(true);
     try {
       await checkAgent();
-      const prepared = await postJson<any>(action === 'reprint' ? '/metro-labeling/reprint' : '/metro-labeling/print', { id: row.id, printerName, type: 'zpl', action, prepareOnly: true });
+      const prepared = await postJson<any>(action === 'reprint' ? '/metro-labeling/reprint' : '/metro-labeling/print', { id: row.id, printerName: currentPrinter, type: 'zpl', action, prepareOnly: true });
       await sendPrintJob(prepared.localAgentJob);
-      await postJson('/metro-labeling/print/confirm', { id: row.id, printerName, type: 'zpl', action });
-      showNotice('success', `${row.trackingNumber} sent to ${printerName}.`);
-      setLastPrinted({ trackingNumber: row.trackingNumber, at: new Date().toISOString(), printerName });
-      await load();
+      const timestamp = new Date().toISOString();
+      const nextStatus = action === 'reprint' || ['Printed', 'Reprinted'].includes(row.status) ? 'Reprinted' : 'Printed';
+      const optimistic = normalizeMetroRow({
+        ...row,
+        status: nextStatus,
+        printedAt: timestamp,
+        printedBy: user.username,
+        printerName: currentPrinter,
+        reprintCount: nextStatus === 'Reprinted' ? Number(row.reprintCount || 0) + 1 : Number(row.reprintCount || 0),
+        errorMessage: '',
+        updatedAt: timestamp
+      });
+      setRows((current) => current.map((item) => item.id === row.id ? optimistic : item));
+      setPreview(optimistic);
+      setLastPrinted({ trackingNumber: row.trackingNumber, at: timestamp, printerName: currentPrinter });
+      setSyncStatus('Pending sync');
+      const confirmed = await postJson<any>('/metro-labeling/print/confirm', { id: row.id, printerName: currentPrinter, type: 'zpl', action });
+      if (confirmed.row) {
+        const normalized = normalizeMetroRow(confirmed.row);
+        setRows((current) => current.map((item) => item.id === row.id ? normalized : item));
+        setPreview(normalized);
+      }
+      updateSyncState(confirmed);
+      showNotice('success', `${row.trackingNumber} sent to ${currentPrinter}.`);
       return 'printed';
     } catch (error: any) {
-      await postJson('/metro-labeling/print/confirm', { id: row.id, printerName, type: 'zpl', action, errorMessage: error.message }).catch(() => null);
+      const failed = await postJson<any>('/metro-labeling/print/confirm', { id: row.id, printerName: currentPrinter, type: 'zpl', action, errorMessage: error.message }).catch(() => null);
+      if (failed?.row) {
+        const normalized = normalizeMetroRow(failed.row);
+        setRows((current) => current.map((item) => item.id === row.id ? normalized : item));
+        setPreview(normalized);
+        updateSyncState(failed);
+      }
       const offline = /agent|fetch|network|offline/i.test(error.message);
-      showNotice(offline ? 'info' : 'error', offline ? 'Print agent not connected. Preview is ready.' : error.message);
-      await load().catch(() => null);
+      if (offline) {
+        setAgentStatus('Offline');
+        setAgentMessage('Install and run BROPS Print Agent on this PC.');
+      }
+      showNotice(offline ? 'info' : 'error', offline ? 'Install and run BROPS Print Agent on this PC.' : error.message);
       return offline ? 'offline' : 'error';
     } finally {
       setBusy(false);
+    }
+  };
+
+  const previewPdf = async (row: MetroLabelRow) => {
+    try {
+      const prepared = await postJson<any>('/metro-labeling/print', { id: row.id, printerName, type: 'pdf', action: 'print', prepareOnly: true });
+      if (!prepared.pdfBase64) throw new Error('PDF preview was not generated.');
+      const url = `data:application/pdf;base64,${prepared.pdfBase64}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setPreview(normalizeMetroRow(prepared.row || row));
+    } catch (error: any) {
+      showNotice('error', error.message);
     }
   };
 
@@ -1310,16 +1437,16 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const runQueuedScan = async (trackingNumber: string) => {
     setScanStatus('Ready');
     try {
-      const response = await postJson<{ row: MetroLabelRow; scannedAt: string }>('/metro-labeling/scan', { trackingNumber });
-      const row = normalizeMetroRow(response.row);
-      if (trackingKey(row.trackingNumber) !== trackingKey(trackingNumber)) {
+      const key = trackingKey(trackingNumber);
+      const row = rowsRef.current.find((item) => [item.trackingNumber, item.barcodeValue].some((value) => trackingKey(value) === key));
+      if (!row) {
         markScanNotFound(trackingNumber);
         return;
       }
 
       const alreadyPrinted = ['Printed', 'Reprinted'].includes(row.status);
       setPreview(row);
-      setLastScanned({ trackingNumber, status: row.status || 'Found', at: response.scannedAt || new Date().toISOString() });
+      setLastScanned({ trackingNumber, status: row.status || 'Found', at: new Date().toISOString() });
 
       if (alreadyPrinted && !autoReprint) {
         setScanStatus('Already Printed');
@@ -1341,12 +1468,8 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       setScanStatus(result === 'printed' ? 'Printed' : 'Printer Offline');
       if (result === 'printed' || autoClearAfterPrint) setScanValue('');
     } catch (error: any) {
-      if (error.status === 404 || /not found/i.test(error.message)) {
-        markScanNotFound(trackingNumber);
-      } else {
-        setScanStatus('Printer Offline');
-        showNotice('error', error.message);
-      }
+      setScanStatus('Printer Offline');
+      showNotice('error', error.message);
     } finally {
       setScanValue('');
       focusScanInput();
@@ -1405,7 +1528,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
       <PageHeader
         title="Metro Labeling"
         subtitle="Upload, search, preview, and print Metro labels."
-        action={<button className="button" onClick={() => load().catch((error) => showNotice('error', error.message))}>Refresh</button>}
+        action={<button className="button" onClick={() => load(true).catch((error) => showNotice('error', error.message))}>Refresh</button>}
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="Uploaded Labels" value={number(metroStats.uploaded)} helper="Current queue" icon="label" />
@@ -1413,6 +1536,42 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
         <Kpi label="Printed Today" value={number(metroStats.printedToday)} helper="Printed or reprinted" tone="teal" icon="activity" />
         <Kpi label="Errors" value={number(metroStats.errors)} helper="Needs attention" tone={metroStats.errors ? 'red' : 'slate'} icon="report" />
       </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <MiniStatus label="Print Agent" value={agentStatus} />
+        <MiniStatus label="Selected Printer" value={printerName || 'Not selected'} />
+        <MiniStatus label="Sync Status" value={syncStatus} />
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Drive Queue</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button className="button button-subtle" onClick={() => loadSyncStatus().catch((error) => showNotice('error', error.message))}>Check</button>
+            <button
+              className="button"
+              disabled={syncStatus !== 'Sync failed'}
+              onClick={async () => {
+                try {
+                  const response = await postJson<any>('/metro-labeling/sync/retry', {});
+                  updateSyncState(response);
+                  showNotice('info', response.retried ? 'Retrying pending Drive sync.' : 'No failed sync items to retry.');
+                } catch (error: any) {
+                  showNotice('error', error.message);
+                }
+              }}
+            >
+              Retry Sync
+            </button>
+          </div>
+        </div>
+      </div>
+      {agentStatus !== 'Online' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+          {agentMessage || 'Install and run BROPS Print Agent on this PC.'} Browser preview remains available.
+        </div>
+      )}
+      {syncStatus === 'Sync failed' && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">
+          {syncError || 'Background Drive sync failed.'}
+        </div>
+      )}
       <div className="card p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
           <div className="min-w-0 flex-1">
@@ -1528,25 +1687,28 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
         <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto_auto]">
           <TextInput label="Queue Filter" value={queueFilter} onChange={setQueueFilter} />
           <SelectInput label="Status" value={status} options={['', 'Uploaded', 'Pending Print', 'Printed', 'Reprinted', 'Error']} onChange={setStatus} />
-          <button className="button lg:mt-6" onClick={() => load().catch((error) => showNotice('error', error.message))}>Apply</button>
+          <button className="button lg:mt-6" onClick={() => setPreview(visibleRows[0] || null)}>Apply</button>
           <button className="button button-primary lg:mt-6" disabled={busy} onClick={bulkPrint}>Print Selected</button>
         </div>
       </div>
-      <DataTable
-        title="Metro Labels"
-        rows={rows}
-        columns={['trackingNumber', 'driver', 'routingSequence', 'deliveryAddress', 'city', 'postalCode', 'status', 'uploadedBy', 'printedBy', 'printedAt', 'printerName', 'reprintCount', 'errorMessage']}
-        emptyText="Upload a file to begin."
-        select={{ selected, onChange: setSelected }}
-        onRowClick={(row) => setPreview(row)}
-        actions={(row: MetroLabelRow) => (
-          <div className="flex flex-wrap gap-2">
-            <button className="button" onClick={() => setPreview(row)}>Preview</button>
-            <button className="button button-primary" disabled={busy} onClick={() => printRow(row)}>Print</button>
-            <button className="button" disabled={busy} onClick={() => printRow(row, 'reprint')}>Reprint</button>
-          </div>
-        )}
-      />
+      {loadingRows ? <DashboardSkeleton /> : (
+        <DataTable
+          title="Metro Labels"
+          rows={visibleRows}
+          columns={['trackingNumber', 'driver', 'routingSequence', 'deliveryAddress', 'city', 'postalCode', 'status', 'uploadedBy', 'printedBy', 'printedAt', 'printerName', 'reprintCount', 'errorMessage']}
+          emptyText={batchStatus === 'Closed' ? 'Metro batch closed. Upload a new file to begin.' : 'Upload a file to begin.'}
+          select={{ selected, onChange: setSelected }}
+          onRowClick={(row) => setPreview(row)}
+          actions={(row: MetroLabelRow) => (
+            <div className="flex flex-wrap gap-2">
+              <button className="button" onClick={() => setPreview(row)}>Preview</button>
+              <button className="button" onClick={() => previewPdf(row)}>PDF Preview</button>
+              <button className="button button-primary" disabled={busy || agentStatus !== 'Online'} onClick={() => printRow(row)}>Print</button>
+              <button className="button" disabled={busy || agentStatus !== 'Online'} onClick={() => printRow(row, 'reprint')}>Reprint</button>
+            </div>
+          )}
+        />
+      )}
       <DataTable
         title="Print History"
         rows={printLogs}
@@ -1605,26 +1767,38 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
   const [token, setToken] = useState(getAgentToken());
   const [printer, setPrinter] = useState(getDefaultPrinter());
   const [printers, setPrinters] = useState<any[]>([]);
-  const [status, setStatus] = useState('Not checked');
+  const [status, setStatus] = useState<LocalAgentStatus>('Checking');
+  const [statusMessage, setStatusMessage] = useState('Checking BROPS Print Agent...');
   const [busy, setBusy] = useState(false);
 
   const detect = async () => {
     setBusy(true);
     try {
       setAgentToken(token);
-      await checkAgent();
+      const agent = await checkAgentStatus();
+      setStatus(agent.status);
+      setStatusMessage(agent.message);
+      if (agent.status !== 'Online') {
+        setPrinters([]);
+        showNotice('info', agent.message);
+        return;
+      }
       const response = await getPrinters();
       setPrinters(response.printers || []);
       setPrinter(printer || response.defaultPrinter || response.printers?.[0]?.Name || '');
-      setStatus('Online');
       showNotice('success', 'Print service is online.');
     } catch (error: any) {
       setStatus('Offline');
-      showNotice('error', error.message);
+      setStatusMessage('Install and run BROPS Print Agent on this PC.');
+      showNotice('info', 'Install and run BROPS Print Agent on this PC.');
     } finally {
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    detect();
+  }, []);
 
   const savePrinter = async () => {
     try {
@@ -1653,9 +1827,12 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
 
   return (
     <PageStack>
-      <PageHeader title="Printer Setup" subtitle="Choose and test the label printer for this workstation." />
+      <PageHeader title="Printer Setup" subtitle="Choose and test the label printer for this workstation." action={<button className="button" disabled={busy} onClick={detect}>{busy ? 'Checking...' : 'Check Agent'}</button>} />
       <div className="grid gap-5 xl:grid-cols-[1fr_0.85fr]">
         <FormCard title="Printer Connection">
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
+            Install and run BROPS Print Agent on this PC. The app checks the local agent at <span className="font-mono">http://localhost:5055/health</span>.
+          </div>
           <FormGrid cols="grid-cols-1">
             <TextInput label="Printer Access Token" value={token} onChange={setToken} />
             <SelectInput label="Default Label Printer" value={printer} options={['', ...printers.map((item) => item.Name)]} onChange={setPrinter} />
@@ -1669,7 +1846,9 @@ function PrinterSetupPage({ showNotice }: { showNotice: (type: NoticeType, text:
         <Panel title="Printer Status">
           <div className="grid gap-3 text-sm text-slate-700">
             <MiniStatus label="Status" value={status} />
-            <MiniStatus label="Saved Printer" value={printer || 'Not selected'} />
+            <MiniStatus label="Selected Printer" value={printer || 'Not selected'} />
+            <MiniStatus label="Agent URL" value="http://localhost:5055/health" />
+            {status !== 'Online' && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 font-bold text-amber-800">{statusMessage || 'Install and run BROPS Print Agent on this PC.'}</div>}
           </div>
         </Panel>
       </div>
