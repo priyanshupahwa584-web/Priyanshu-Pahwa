@@ -442,6 +442,18 @@ function completedSummaryRows(summary = {}) {
   }];
 }
 
+function scannedCompletedSummaryRows(summary = {}) {
+  return [{
+    'Uploaded File Name': summary.fileName || '',
+    'Total Uploaded Labels': summary.totalLabels || 0,
+    'Scanned/Printed Labels': summary.printed || 0,
+    'Pending Labels': summary.pending || 0,
+    Errors: summary.errors || 0,
+    'Completed By': summary.completedBy || '',
+    'Completed At': summary.completedAt || ''
+  }];
+}
+
 export async function saveMetroCompletedFile(rows = [], summary = {}) {
   const stamp = timestampPart(summary.completedAt);
   const completedFileName = `completed_metro_${safeFilePart(summary.fileName)}_${stamp}.xlsx`;
@@ -456,6 +468,46 @@ export async function saveMetroCompletedFile(rows = [], summary = {}) {
   });
   const summaryBuffer = await buildXlsx(completedSummaryRows(summary), {
     report: 'Completed Metro File Summary',
+    completedBy: summary.completedBy || '',
+    completedAt: summary.completedAt || ''
+  });
+  const completedFile = await uploadBufferToDrive({
+    buffer: completedBuffer,
+    fileName: completedFileName,
+    mimeType: mimeFor('xlsx'),
+    folderPath
+  });
+  const summaryFile = await uploadBufferToDrive({
+    buffer: summaryBuffer,
+    fileName: summaryFileName,
+    mimeType: mimeFor('xlsx'),
+    folderPath
+  });
+  lastCompletedFile = {
+    summary,
+    completedFile,
+    summaryFile,
+    completedFileName,
+    summaryFileName
+  };
+  return lastCompletedFile;
+}
+
+export async function saveMetroScannedCompletedFile(rows = [], summary = {}) {
+  const stamp = timestampPart(summary.completedAt);
+  const scannedRows = rows.filter((row) => ['Printed', 'Reprinted'].includes(String(row.status || '')));
+  const completedFileName = `scanned_completed_${safeFilePart(summary.fileName)}_${stamp}.xlsx`;
+  const summaryFileName = `completed_summary_${stamp}.xlsx`;
+  const folderPath = ['Metro', summary.date || todayMetroDate(), 'Completed'];
+  const completedBuffer = await buildXlsx(completedMetroRows(scannedRows, summary), {
+    report: 'Scanned Completed Metro Labels',
+    fileName: summary.fileName || '',
+    completedBy: summary.completedBy || '',
+    completedAt: summary.completedAt || '',
+    rowCount: scannedRows.length
+  });
+  const summaryBuffer = await buildXlsx(scannedCompletedSummaryRows(summary), {
+    report: 'Scanned Completed Metro Summary',
     completedBy: summary.completedBy || '',
     completedAt: summary.completedAt || ''
   });

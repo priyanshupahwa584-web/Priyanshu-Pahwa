@@ -1213,6 +1213,9 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const [completedFiles, setCompletedFiles] = useState<any[]>([]);
   const [completedFilesOpen, setCompletedFilesOpen] = useState(false);
   const [selectedCompletedFileId, setSelectedCompletedFileId] = useState('');
+  const [completedClearSummary, setCompletedClearSummary] = useState<any>(null);
+  const [completedClearModalOpen, setCompletedClearModalOpen] = useState(false);
+  const [clearingCompletedFile, setClearingCompletedFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const scanQueueRef = useRef<string[]>([]);
@@ -1230,6 +1233,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
   const canUpload = ['Admin', 'Manager', 'Supervisor'].includes(user.role);
   const canCloseBatch = canUpload;
   const canCompleteFile = canUpload || user.permissions.includes('metro-complete-file');
+  const canClearCompletedFile = canUpload;
   const visibleRows = useMemo(() => {
     const search = queueFilter.trim().toLowerCase();
     const selectedStatus = status.trim().toLowerCase();
@@ -1497,6 +1501,44 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
     }
   };
 
+  const openCompletedClear = async () => {
+    if (!canClearCompletedFile || !rows.length) return;
+    try {
+      const response = await api<any>('/metro-labeling/completed/clear-summary');
+      setCompletedClearSummary(response.summary);
+      setCompletedClearModalOpen(true);
+    } catch (error: any) {
+      showNotice('error', error.message);
+    }
+  };
+
+  const confirmCompletedClear = async () => {
+    setClearingCompletedFile(true);
+    try {
+      const response = await postJson<any>('/metro-labeling/completed/clear', {});
+      setRows([]);
+      setSelected([]);
+      setPreview(null);
+      setLastScanned(null);
+      setLastPrinted(null);
+      setUploadSummary(null);
+      setFile(null);
+      setBatchStatus('Completed');
+      setCloseSummaryReady(false);
+      setCompletedClearSummary(response.summary);
+      setCompletedClearModalOpen(false);
+      setCompletedFilesOpen(false);
+      setSelectedCompletedFileId('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      updateSyncState(response);
+      showNotice('success', 'Metro file completed, cleared, and saved to Drive.');
+    } catch (error: any) {
+      showNotice('error', error.message);
+    } finally {
+      setClearingCompletedFile(false);
+    }
+  };
+
   const loadCompletedFiles = async () => {
     try {
       const response = await api<{ files: any[] }>('/metro-labeling/completed-files');
@@ -1741,6 +1783,7 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
           </div>
           <div className="flex flex-wrap gap-2">
             {canCompleteFile && rows.length > 0 && <button className="button button-primary" disabled={completingFile} onClick={openCompleteFile}>Complete File</button>}
+            {canClearCompletedFile && rows.length > 0 && <button className="button" disabled={clearingCompletedFile} onClick={openCompletedClear}>Completed</button>}
             <button className="button" onClick={clearScreenOnly}>Clear screen only</button>
             <button className="button" onClick={() => reloadTodayBatch().catch((error) => showNotice('error', error.message))}>Reload today's batch</button>
             {canCompleteFile && <button className="button" onClick={loadCompletedFiles}>Reload Completed File</button>}
@@ -1905,6 +1948,34 @@ function MetroLabelingPage({ user, showNotice }: { user: User; showNotice: (type
         columns={['timestamp', 'trackingNumber', 'action', 'status', 'printerName', 'userId', 'errorMessage']}
         emptyText="No print history yet."
       />
+      {completedClearModalOpen && completedClearSummary && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-950">Completed</h3>
+                <p className="mt-1 text-sm font-semibold text-slate-500">Save scanned and printed labels, then clear the active screen.</p>
+              </div>
+              <button className="button button-subtle" onClick={() => setCompletedClearModalOpen(false)}>Cancel</button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <MiniStatus label="Uploaded file name" value={completedClearSummary.fileName || 'Unknown'} />
+              <MiniStatus label="Total uploaded labels" value={number(completedClearSummary.totalLabels)} />
+              <MiniStatus label="Scanned/printed labels" value={number(completedClearSummary.scannedPrinted ?? completedClearSummary.printed)} />
+              <MiniStatus label="Pending labels" value={number(completedClearSummary.pending)} />
+              <MiniStatus label="Errors" value={number(completedClearSummary.errors)} />
+              <MiniStatus label="Completed by" value={completedClearSummary.completedBy || user.username} />
+              <MiniStatus label="Completed at" value={formatDateTime(completedClearSummary.completedAt)} />
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-3">
+              <button className="button" onClick={() => setCompletedClearModalOpen(false)}>Keep File Active</button>
+              <button className="button button-primary" disabled={clearingCompletedFile} onClick={confirmCompletedClear}>
+                {clearingCompletedFile ? 'Saving...' : 'Completed'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {completeModalOpen && completeSummary && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
           <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)]">

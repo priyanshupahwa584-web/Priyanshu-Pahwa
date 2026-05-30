@@ -28,7 +28,8 @@ import {
   retryFailedDriveWrites,
   saveFinalMetroFiles,
   saveMetroCloseSummary,
-  saveMetroCompletedFile
+  saveMetroCompletedFile,
+  saveMetroScannedCompletedFile
 } from '../services/metroCacheService.js';
 import { tabs } from '../services/sheetSchema.js';
 import { buildPdfLabel, buildZplLabel, normalizeLabelPayload } from '../utils/label.js';
@@ -69,6 +70,11 @@ function requireBatchCloser(req, res, next) {
 function requireFileCompleter(req, res, next) {
   if (['Admin', 'Manager', 'Supervisor'].includes(req.user?.role) || req.user?.permissions?.includes('metro-complete-file')) return next();
   return res.status(403).json({ message: 'Complete Metro File access required.' });
+}
+
+function requireMetroCompletedClear(req, res, next) {
+  if (['Admin', 'Manager', 'Supervisor'].includes(req.user?.role)) return next();
+  return res.status(403).json({ message: 'Only Admin, Manager, or Supervisor can complete Metro files.' });
 }
 
 function filterLabels(rows, query = {}) {
@@ -398,6 +404,53 @@ labelsRouter.post('/complete', authRequired, requireAccess('metro-labeling'), re
       batchStatus: 'Completed',
       rows: [],
       summary,
+      completedFile: saved.completedFile,
+      summaryFile: saved.summaryFile,
+      ...getDriveWriteQueueStatus()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+labelsRouter.get('/completed/clear-summary', authRequired, requireAccess('metro-labeling'), requireMetroCompletedClear, async (req, res, next) => {
+  try {
+    const rows = await readTodayMetroRows({ includeClosed: true });
+    const completedAt = nowIso();
+    const summary = await buildMetroCompleteSummary(rows, { completedBy: req.user.username, completedAt });
+    res.json({ summary: { ...summary, scannedPrinted: summary.printed } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+labelsRouter.post('/completed/clear', authRequired, requireAccess('metro-labeling'), requireMetroCompletedClear, async (req, res, next) => {
+  try {
+    await flushDriveWriteQueue();
+    const rows = await readTodayMetroRows({ includeClosed: true });
+    const completedAt = nowIso();
+    const summary = await buildMetroCompleteSummary(rows, { completedBy: req.user.username, completedAt });
+    const saved = await saveMetroScannedCompletedFile(rows, summary);
+    await audit({
+      actor: req.user.username,
+      action: 'metro_file_completed',
+      entity: 'MetroLabeling',
+      entityId: summary.uploadedFileId || summary.fileName,
+      ip: req.ip,
+      device: req.get('user-agent') || '',
+      metadata: {
+        ...summary,
+        scannedPrinted: summary.printed,
+        completedFileId: saved.completedFile.id,
+        summaryFileId: saved.summaryFile.id
+      }
+    });
+    markMetroFileCompleted({ completedBy: req.user.username, completedAt });
+    res.json({
+      message: 'Metro file completed, cleared, and saved to Drive.',
+      batchStatus: 'Completed',
+      rows: [],
+      summary: { ...summary, scannedPrinted: summary.printed },
       completedFile: saved.completedFile,
       summaryFile: saved.summaryFile,
       ...getDriveWriteQueueStatus()
